@@ -25,7 +25,7 @@ class DocumentChunkRepository:
         return cls(create_client(url, key))
 
     def insert_chunks(self, chunks: Sequence[DocumentChunk]) -> list[dict[str, Any]]:
-        """Insert chunks and return the rows returned by Supabase."""
+        """Insert chunks without embeddings and return stored rows."""
 
         rows = [
             {
@@ -37,6 +37,34 @@ class DocumentChunkRepository:
             }
             for chunk in chunks
         ]
+        if not rows:
+            return []
+        response = self._client.table(TABLE_NAME).insert(rows).execute()
+        return response.data
+
+    def insert_chunks_with_embeddings(
+        self,
+        chunks: Sequence[DocumentChunk],
+        embeddings: Sequence[Sequence[float]],
+    ) -> list[dict[str, Any]]:
+        """Insert chunks with their embeddings and return stored rows."""
+
+        if len(embeddings) != len(chunks):
+            raise ValueError("embeddings length must match chunks length")
+
+        rows: list[dict[str, Any]] = []
+        for index, chunk in enumerate(chunks):
+            rows.append(
+                {
+                    "id": chunk.chunk_id,
+                    "source_path": chunk.source_path,
+                    "title": chunk.title,
+                    "category": chunk.category,
+                    "chunk_text": chunk.text,
+                    "embedding": list(embeddings[index]),
+                }
+            )
+
         if not rows:
             return []
         response = self._client.table(TABLE_NAME).insert(rows).execute()
