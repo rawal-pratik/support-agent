@@ -7,6 +7,7 @@ import pytest
 from typer.testing import CliRunner
 
 from support_agent.cli import app
+from support_agent.csv_io import read_tickets
 from support_agent.models import AgentResult, Ticket
 from support_agent.retrieval import RetrievedChunk
 from support_agent.ingestion import IngestionResult
@@ -260,13 +261,322 @@ class TestTriageCommand:
             assert result.exit_code == 0
             assert output_csv.exists()
 
-            # Verify output columns
+            # Verify exact output headers in correct order
             content = output_csv.read_text(encoding="utf-8")
-            assert "status" in content
-            assert "product_area" in content
-            assert "response" in content
-            assert "justification" in content
-            assert "request_type" in content
+            lines = content.strip().split("\n")
+            assert lines[0] == "status,product_area,response,justification,request_type"
+
+    def test_triage_output_headers_exact_order(self, tmp_path):
+        """Output CSV has exact required headers in exact order."""
+        input_csv = tmp_path / "input.csv"
+        input_csv.write_text(
+            "Issue,Subject\nTest issue,Test subject\n", encoding="utf-8"
+        )
+        output_csv = tmp_path / "output.csv"
+
+        mock_retriever = make_mock_retriever()
+        mock_retriever.retrieve.return_value = [make_retrieved_chunk()]
+        mock_llm = make_mock_llm()
+        mock_llm.generate.return_value = make_agent_result()
+
+        with patch("support_agent.cli.GeminiEmbeddingProvider") as mock_embed_cls, \
+             patch("support_agent.cli.DocumentChunkRepository") as mock_repo_cls, \
+             patch("support_agent.cli.OpenRouterProvider") as mock_llm_cls, \
+             patch("support_agent.cli.SemanticRetriever", return_value=mock_retriever):
+
+            mock_embed_cls.from_env.return_value = MagicMock()
+            mock_repo_cls.from_env.return_value = MagicMock()
+            mock_llm_cls.from_env.return_value = mock_llm
+
+            result = runner.invoke(app, ["triage", str(input_csv), str(output_csv)])
+
+            assert result.exit_code == 0
+            content = output_csv.read_text(encoding="utf-8")
+            headers = content.strip().split("\n")[0].split(",")
+            assert headers == ["status", "product_area", "response", "justification", "request_type"]
+
+    def test_triage_cli_summary_output(self, tmp_path):
+        """triage CLI prints summary with replied/escalated counts."""
+        input_csv = tmp_path / "input.csv"
+        input_csv.write_text(
+            "Issue,Subject\n"
+            "Issue one with enough text,A\n"
+            "Issue two with enough text,B\n"
+            "Issue three with enough text,C\n",
+            encoding="utf-8"
+        )
+        output_csv = tmp_path / "output.csv"
+
+        mock_retriever = make_mock_retriever()
+        mock_retriever.retrieve.return_value = [make_retrieved_chunk()]
+        mock_llm = make_mock_llm()
+        mock_llm.generate.side_effect = [
+            make_agent_result(status="replied"),
+            make_agent_result(status="replied"),
+            make_agent_result(status="escalated"),
+        ]
+
+        with patch("support_agent.cli.GeminiEmbeddingProvider") as mock_embed_cls, \
+             patch("support_agent.cli.DocumentChunkRepository") as mock_repo_cls, \
+             patch("support_agent.cli.OpenRouterProvider") as mock_llm_cls, \
+             patch("support_agent.cli.SemanticRetriever", return_value=mock_retriever):
+
+            mock_embed_cls.from_env.return_value = MagicMock()
+            mock_repo_cls.from_env.return_value = MagicMock()
+            mock_llm_cls.from_env.return_value = mock_llm
+
+            result = runner.invoke(app, ["triage", str(input_csv), str(output_csv)])
+
+            assert result.exit_code == 0
+            assert "Processed 3 input tickets" in result.output
+            assert "Output: 3 tickets written to" in result.output
+            assert "Replied: 2" in result.output
+            assert "Escalated: 1" in result.output
+
+    def test_triage_handles_blank_subject(self, tmp_path):
+        """triage handles tickets with blank Subject field."""
+        input_csv = tmp_path / "input.csv"
+        input_csv.write_text(
+            "Issue,Subject\nTest issue with blank subject,\n", encoding="utf-8"
+        )
+        output_csv = tmp_path / "output.csv"
+
+        mock_retriever = make_mock_retriever()
+        mock_retriever.retrieve.return_value = [make_retrieved_chunk()]
+        mock_llm = make_mock_llm()
+        mock_llm.generate.return_value = make_agent_result()
+
+        with patch("support_agent.cli.GeminiEmbeddingProvider") as mock_embed_cls, \
+             patch("support_agent.cli.DocumentChunkRepository") as mock_repo_cls, \
+             patch("support_agent.cli.OpenRouterProvider") as mock_llm_cls, \
+             patch("support_agent.cli.SemanticRetriever", return_value=mock_retriever):
+
+            mock_embed_cls.from_env.return_value = MagicMock()
+            mock_repo_cls.from_env.return_value = MagicMock()
+            mock_llm_cls.from_env.return_value = mock_llm
+
+            result = runner.invoke(app, ["triage", str(input_csv), str(output_csv)])
+
+            assert result.exit_code == 0
+            assert output_csv.exists()
+
+    def test_triage_handles_quoted_multiline(self, tmp_path):
+        """triage handles quoted fields and multiline content."""
+        input_csv = tmp_path / "input.csv"
+        input_csv.write_text(
+            'Issue,Subject\n"Multiline\nissue text","Subject with\nnewline"\n', encoding="utf-8"
+        )
+        output_csv = tmp_path / "output.csv"
+
+        mock_retriever = make_mock_retriever()
+        mock_retriever.retrieve.return_value = [make_retrieved_chunk()]
+        mock_llm = make_mock_llm()
+        mock_llm.generate.return_value = make_agent_result()
+
+        with patch("support_agent.cli.GeminiEmbeddingProvider") as mock_embed_cls, \
+             patch("support_agent.cli.DocumentChunkRepository") as mock_repo_cls, \
+             patch("support_agent.cli.OpenRouterProvider") as mock_llm_cls, \
+             patch("support_agent.cli.SemanticRetriever", return_value=mock_retriever):
+
+            mock_embed_cls.from_env.return_value = MagicMock()
+            mock_repo_cls.from_env.return_value = MagicMock()
+            mock_llm_cls.from_env.return_value = mock_llm
+
+            result = runner.invoke(app, ["triage", str(input_csv), str(output_csv)])
+
+            assert result.exit_code == 0
+            assert output_csv.exists()
+
+    def test_triage_missing_input_headers_fails(self, tmp_path):
+        """triage with missing required input headers fails clearly."""
+        bad_csv = tmp_path / "bad.csv"
+        bad_csv.write_text("Wrong,Headers\nvalue1,value2\n", encoding="utf-8")
+        output_csv = tmp_path / "output.csv"
+
+        with patch("support_agent.cli.GeminiEmbeddingProvider") as mock_embed_cls, \
+             patch("support_agent.cli.DocumentChunkRepository") as mock_repo_cls, \
+             patch("support_agent.cli.OpenRouterProvider") as mock_llm_cls, \
+             patch("support_agent.cli.SemanticRetriever") as mock_retriever_cls:
+
+            mock_embed_cls.from_env.return_value = MagicMock()
+            mock_repo_cls.from_env.return_value = MagicMock()
+            mock_llm_cls.from_env.return_value = MagicMock()
+            mock_retriever_cls.return_value = make_mock_retriever()
+
+            result = runner.invoke(app, ["triage", str(bad_csv), str(output_csv)])
+
+            assert result.exit_code == 1
+            assert "missing required column" in result.output.lower() or "invalid input csv" in result.output.lower()
+
+    def test_triage_each_ticket_independent(self, tmp_path):
+        """Each ticket is passed independently to the orchestrator."""
+        input_csv = tmp_path / "input.csv"
+        input_csv.write_text(
+            "Issue,Subject\n"
+            "Issue one text here,A\n"
+            "Issue two text here,B\n"
+            "Issue three text here,C\n",
+            encoding="utf-8"
+        )
+        output_csv = tmp_path / "output.csv"
+
+        mock_orchestrator = MagicMock()
+        mock_orchestrator.process_ticket.return_value = make_agent_result()
+
+        with patch("support_agent.cli.GeminiEmbeddingProvider") as mock_embed_cls, \
+             patch("support_agent.cli.DocumentChunkRepository") as mock_repo_cls, \
+             patch("support_agent.cli.OpenRouterProvider") as mock_llm_cls, \
+             patch("support_agent.cli.SemanticRetriever") as mock_retriever_cls, \
+             patch("support_agent.cli.TriageOrchestrator", return_value=mock_orchestrator):
+
+            mock_embed_cls.from_env.return_value = MagicMock()
+            mock_repo_cls.from_env.return_value = MagicMock()
+            mock_llm_cls.from_env.return_value = make_mock_llm()
+            mock_retriever_cls.return_value = make_mock_retriever()
+
+            result = runner.invoke(app, ["triage", str(input_csv), str(output_csv)])
+
+            assert result.exit_code == 0
+            assert mock_orchestrator.process_ticket.call_count == 3
+            # Each call should receive a Ticket with the correct issue/subject
+            call_args = [call[0][0] for call in mock_orchestrator.process_ticket.call_args_list]
+            assert call_args[0].issue == "Issue one text here"
+            assert call_args[0].subject == "A"
+            assert call_args[1].issue == "Issue two text here"
+            assert call_args[1].subject == "B"
+            assert call_args[2].issue == "Issue three text here"
+            assert call_args[2].subject == "C"
+
+    def test_triage_real_target_csv_preserves_order(self, tmp_path):
+        """
+        Process the actual target CSV and verify row-order preservation.
+
+        This test:
+        1. Reads the actual target CSV (public/samples/support_tickets.csv)
+        2. Verifies it contains exactly 16 tickets
+        3. Mocks TriageOrchestrator directly (no external services)
+        4. Makes process_ticket return deterministic AgentResult encoding ticket position
+        5. Runs CLI triage command against real target CSV
+        6. Verifies process_ticket called exactly 16 times
+        6. Verifies Ticket arguments preserve exact Issue/Subject order
+        7. Verifies output CSV has exactly 16 data rows
+        8. Verifies output rows remain in same order as input
+        """
+        target_csv = Path("public/samples/support_tickets.csv")
+        assert target_csv.exists(), "Target CSV not found"
+        output_csv = tmp_path / "output.csv"
+
+        # Read the target CSV to get expected issues/subjects in order
+        expected_tickets = read_tickets(target_csv)
+        assert len(expected_tickets) == 16, f"Expected 16 tickets, got {len(expected_tickets)}"
+
+        # Create deterministic AgentResult for each position
+        # Use response field to encode position so we can verify order
+        def make_positioned_result(position: int) -> AgentResult:
+            return make_agent_result(
+                response=f"POSITION_{position:02d}",
+                justification=f"Justification for ticket {position}"
+            )
+
+        mock_orchestrator = MagicMock()
+        mock_orchestrator.process_ticket.side_effect = [
+            make_positioned_result(i + 1) for i in range(16)
+        ]
+
+        with patch("support_agent.cli.GeminiEmbeddingProvider") as mock_embed_cls, \
+             patch("support_agent.cli.DocumentChunkRepository") as mock_repo_cls, \
+             patch("support_agent.cli.OpenRouterProvider") as mock_llm_cls, \
+             patch("support_agent.cli.SemanticRetriever") as mock_retriever_cls, \
+             patch("support_agent.cli.TriageOrchestrator", return_value=mock_orchestrator):
+
+            mock_embed_cls.from_env.return_value = MagicMock()
+            mock_repo_cls.from_env.return_value = MagicMock()
+            mock_llm_cls.from_env.return_value = make_mock_llm()
+            mock_retriever_cls.return_value = make_mock_retriever()
+
+            result = runner.invoke(app, ["triage", str(target_csv), str(output_csv)])
+
+            assert result.exit_code == 0, f"CLI failed: {result.output}"
+
+            # Verify process_ticket called exactly 16 times
+            assert mock_orchestrator.process_ticket.call_count == 16
+
+            # Verify Ticket arguments preserve exact Issue/Subject order
+            call_args = [call[0][0] for call in mock_orchestrator.process_ticket.call_args_list]
+            for i, (expected, actual) in enumerate(zip(expected_tickets, call_args)):
+                assert actual.issue == expected.issue, f"Ticket {i+1} issue mismatch"
+                assert actual.subject == expected.subject, f"Ticket {i+1} subject mismatch"
+
+            # Verify output CSV has exactly 16 data rows (plus header)
+            content = output_csv.read_text(encoding="utf-8")
+            lines = content.strip().split("\n")
+            assert len(lines) == 17, f"Expected 16 data rows + header, got {len(lines)-1} data rows"
+
+            # Verify output rows remain in same order as input (via position-encoded response)
+            import csv
+            from io import StringIO
+            reader = csv.DictReader(StringIO(content))
+            output_rows = list(reader)
+            assert len(output_rows) == 16
+            for i, row in enumerate(output_rows):
+                expected_pos = i + 1
+                assert row["response"] == f"POSITION_{expected_pos:02d}", \
+                    f"Row {i+1} out of order: expected POSITION_{expected_pos:02d}, got {row['response']}"
+
+    def test_triage_output_rows_conform_to_agentresult(self, tmp_path):
+        """Output rows always conform to AgentResult contract."""
+        input_csv = tmp_path / "input.csv"
+        input_csv.write_text(
+            "Issue,Subject\nTest issue,Test subject\n", encoding="utf-8"
+        )
+        output_csv = tmp_path / "output.csv"
+
+        mock_retriever = make_mock_retriever()
+        mock_retriever.retrieve.return_value = [make_retrieved_chunk()]
+        mock_llm = make_mock_llm()
+        mock_llm.generate.return_value = make_agent_result()
+
+        with patch("support_agent.cli.GeminiEmbeddingProvider") as mock_embed_cls, \
+             patch("support_agent.cli.DocumentChunkRepository") as mock_repo_cls, \
+             patch("support_agent.cli.OpenRouterProvider") as mock_llm_cls, \
+             patch("support_agent.cli.SemanticRetriever", return_value=mock_retriever):
+
+            mock_embed_cls.from_env.return_value = MagicMock()
+            mock_repo_cls.from_env.return_value = MagicMock()
+            mock_llm_cls.from_env.return_value = mock_llm
+
+            result = runner.invoke(app, ["triage", str(input_csv), str(output_csv)])
+
+            assert result.exit_code == 0
+
+            import csv
+            with output_csv.open("r", encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                row = next(reader)
+                # Verify all required fields present
+                assert "status" in row
+                assert "product_area" in row
+                assert "response" in row
+                assert "justification" in row
+                assert "request_type" in row
+                # Verify status is valid
+                assert row["status"] in ("replied", "escalated")
+                # Verify request_type is valid
+                assert row["request_type"] in ("bug", "product_issue", "invalid", "feature_request")
+
+    def test_triage_cli_failure_behavior(self, tmp_path):
+        """triage CLI exits non-zero on provider failure."""
+        input_csv = tmp_path / "input.csv"
+        input_csv.write_text("Issue,Subject\nValid issue text here,Subject\n", encoding="utf-8")
+        output_csv = tmp_path / "output.csv"
+
+        with patch("support_agent.cli.GeminiEmbeddingProvider") as mock_embed_cls:
+            mock_embed_cls.from_env.side_effect = ValueError("GEMINI_API_KEY must be configured")
+
+            result = runner.invoke(app, ["triage", str(input_csv), str(output_csv)])
+
+            assert result.exit_code == 1
+            assert "configuration error" in result.output.lower()
 
     def test_triage_preserves_row_order(self, tmp_path):
         """triage preserves input row order."""
