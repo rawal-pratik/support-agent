@@ -14,6 +14,7 @@ from .ingestion import ingest_corpus, IngestionResult
 from .embeddings import EmbeddingProvider, GeminiEmbeddingProvider
 from .db import DocumentChunkRepository
 from .llm import LLMProvider, OpenRouterProvider
+from .evaluation import run_evaluation, format_report
 
 app = typer.Typer(
     name="support-agent",
@@ -222,21 +223,43 @@ def evaluate(
     golden_csv: Optional[Path] = typer.Option(
         None, "--golden", "-g", help="Path to golden/evaluation CSV"
     ),
-    run_csv: Optional[Path] = typer.Option(
-        None, "--run", "-r", help="Path to run results CSV"
-    ),
 ) -> None:
     """
-    Evaluate triage results against golden data.
-
-    [Not yet implemented — evaluation framework coming in Commit 11]
+    Evaluate triage results against golden sample data.
     """
-    typer.echo(
-        "Evaluation command is not yet implemented. "
-        "The evaluation framework will be added in a future commit.",
-        err=True,
-    )
-    raise typer.Exit(code=0)
+    if golden_csv is None:
+        typer.echo("Error: --golden path to sample CSV is required", err=True)
+        raise typer.Exit(code=1)
+
+    if not golden_csv.exists():
+        typer.echo(f"Error: golden CSV not found: {golden_csv}", err=True)
+        raise typer.Exit(code=1)
+
+    try:
+        retriever = SemanticRetriever(
+            embedding_provider=GeminiEmbeddingProvider.from_env(),
+            repository=DocumentChunkRepository.from_env(),
+            top_k=5,
+            similarity_threshold=0.0,
+        )
+        llm_provider = OpenRouterProvider.from_env()
+
+        orchestrator = TriageOrchestrator(
+            retriever=retriever,
+            llm_provider=llm_provider,
+            min_retrieved_chunks=1,
+        )
+
+        report = run_evaluation(golden_csv, orchestrator)
+        formatted = format_report(report)
+        typer.echo(formatted)
+
+    except ValueError as e:
+        typer.echo(f"Configuration error: {e}", err=True)
+        raise typer.Exit(code=1)
+    except Exception as e:
+        typer.echo(f"Evaluation failed: {e}", err=True)
+        raise typer.Exit(code=1)
 
 
 def _version_callback(value: bool) -> None:

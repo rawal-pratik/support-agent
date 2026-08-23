@@ -387,11 +387,11 @@ class TestEvaluateCommand:
         result = runner.invoke(app, ["evaluate", "--help"])
         assert result.exit_code == 0
 
-    def test_evaluate_not_implemented(self):
-        """evaluate reports not implemented."""
+    def test_evaluate_requires_golden_path(self):
+        """evaluate without --golden fails with clear error."""
         result = runner.invoke(app, ["evaluate"])
-        assert result.exit_code == 0
-        assert "not yet implemented" in result.output.lower()
+        assert result.exit_code == 1
+        assert "required" in result.output.lower() or "golden" in result.output.lower()
 
 
 class TestSecretsNotPrinted:
