@@ -2,6 +2,7 @@
 
 from typing import List
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 
 from .models import AgentResult, Ticket
@@ -11,6 +12,7 @@ from .embeddings import GeminiEmbeddingProvider
 from .db import DocumentChunkRepository
 from .llm import OpenRouterProvider
 
+load_dotenv()
 
 # Global orchestrator instance (lazily initialized)
 _orchestrator: TriageOrchestrator | None = None
