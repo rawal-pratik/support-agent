@@ -149,3 +149,31 @@ class DocumentChunkRepository:
         ).execute()
 
         return response.data
+
+    def get_existing_chunk_ids(
+        self,
+        chunk_ids: Sequence[str],
+        batch_size: int = 100,
+    ) -> set[str]:
+        """Return IDs already stored in Supabase using batched queries."""
+
+        if batch_size <= 0:
+            raise ValueError("batch_size must be positive")
+
+        existing_ids: set[str] = set()
+
+        ids = list(chunk_ids)
+
+        for start in range(0, len(ids), batch_size):
+            batch = ids[start : start + batch_size]
+
+            response = (
+                self._client
+                .table(TABLE_NAME)
+                .select("id")
+                .in_("id", batch)
+                .execute()
+            )
+
+            existing_ids.update(row["id"] for row in response.data)
+        return existing_ids

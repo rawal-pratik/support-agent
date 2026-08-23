@@ -25,6 +25,7 @@ class TriageOrchestrator:
         """
         if min_retrieved_chunks < 1:
             raise ValueError("min_retrieved_chunks must be at least 1")
+
         self._retriever = retriever
         self._llm_provider = llm_provider
         self._min_retrieved_chunks = min_retrieved_chunks
@@ -38,6 +39,7 @@ class TriageOrchestrator:
         2. Retrieval — if insufficient evidence, return escalated result
         3. LLM generation — produce structured response
         """
+
         # Step 1: Policy evaluation
         policy_decision = evaluate_policy(ticket)
 
@@ -52,15 +54,19 @@ class TriageOrchestrator:
         # Step 2: Retrieval
         try:
             retrieved_chunks = self._retriever.retrieve(ticket)
-        except Exception as e:
-            # Retrieval failure → escalate
+        except Exception as exc:
+            # Print the underlying retrieval error while preserving escalation behavior.
+            print(
+                f"RETRIEVAL ERROR: {type(exc).__name__}: {exc}"
+            )
+
             return self._make_escalated_result(
                 ticket=ticket,
                 policy_decision=policy_decision,
                 reason="retrieval_failure",
             )
 
-        # Step 2a: Insufficient evidence → escalate (empty retrieval always escalates)
+        # Step 2a: Insufficient evidence → escalate
         if len(retrieved_chunks) < self._min_retrieved_chunks:
             return self._make_escalated_result(
                 ticket=ticket,
@@ -75,8 +81,12 @@ class TriageOrchestrator:
                 policy_decision=policy_decision,
                 retrieved_chunks=retrieved_chunks,
             )
-        except Exception as e:
-            # LLM failure → escalate
+        except Exception as exc:
+            # Print the underlying LLM error while preserving escalation behavior.
+            print(
+                f"LLM ERROR: {type(exc).__name__}: {exc}"
+            )
+
             return self._make_escalated_result(
                 ticket=ticket,
                 policy_decision=policy_decision,
@@ -100,9 +110,11 @@ class TriageOrchestrator:
         reason: str,
     ) -> AgentResult:
         """Create a deterministic escalation AgentResult without LLM call."""
+
         # Map escalation reason to appropriate request_type
         # If policy already classified as INVALID, keep it; otherwise use policy decision
         request_type = policy_decision.request_type
+
         if request_type != "invalid" and reason in (
             "empty_ticket",
             "prompt_injection",
@@ -112,10 +124,12 @@ class TriageOrchestrator:
 
         # Build a concise, deterministic response
         reason_text = self._escalation_reason_text(reason)
+
         response = (
             f"Your request has been escalated for human review. "
             f"Reason: {reason_text}."
         )
+
         justification = (
             f"Ticket automatically escalated per policy: {reason}. "
             f"Policy decision: {policy_decision.request_type.value} "
@@ -135,6 +149,7 @@ class TriageOrchestrator:
 
     def _escalation_reason_text(self, reason: str) -> str:
         """Convert internal escalation reason to human-readable text."""
+
         mapping = {
             "empty_ticket": "ticket content is too short or empty",
             "prompt_injection": "potential prompt injection detected",
@@ -149,6 +164,7 @@ class TriageOrchestrator:
             "unsupported_request": "unsupported request type",
             "unknown_product_area": "product area could not be determined",
         }
+
         return mapping.get(reason, reason.replace("_", " "))
 
 

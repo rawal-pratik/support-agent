@@ -81,7 +81,8 @@ def ingest_corpus(
     # run. These must be skipped before embedding so we do not waste Gemini
     # quota regenerating vectors that already exist.
     existing_ids = repository.get_existing_chunk_ids(
-        [chunk.chunk_id for chunk in chunks]
+        [chunk.chunk_id for chunk in chunks],
+        batch_size=100,
     )
 
     pending_chunks = [
