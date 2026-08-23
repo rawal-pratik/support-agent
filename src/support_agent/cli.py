@@ -1,4 +1,5 @@
 """Terminal CLI for the support triage agent."""
+
 from pathlib import Path
 from typing import Optional
 
@@ -15,6 +16,7 @@ from .embeddings import EmbeddingProvider, GeminiEmbeddingProvider
 from .db import DocumentChunkRepository
 from .llm import LLMProvider, OpenRouterProvider
 from .evaluation import run_evaluation, format_report
+
 
 load_dotenv()
 
@@ -55,13 +57,24 @@ def ingest(
         readable=True,
     ),
     chunk_size: int = typer.Option(
-        400, "--chunk-size", help="Number of words per chunk"
+        400,
+        "--chunk-size",
+        help="Number of words per chunk",
     ),
     overlap: int = typer.Option(
-        50, "--overlap", help="Number of overlapping words between chunks"
+        50,
+        "--overlap",
+        help="Number of overlapping words between chunks",
+    ),
+    max_chunks: Optional[int] = typer.Option(
+        None,
+        "--max-chunks",
+        help="Maximum number of chunks to process.",
     ),
     clear: bool = typer.Option(
-        True, "--clear/--no-clear", help="Clear existing chunks before ingestion"
+        True,
+        "--clear/--no-clear",
+        help="Clear existing chunks before ingestion",
     ),
 ) -> None:
     """
@@ -78,11 +91,13 @@ def ingest(
             chunk_size=chunk_size,
             overlap=overlap,
             clear_existing=clear,
+            max_chunks=max_chunks,
         )
 
         typer.echo(f"Documents processed: {result.document_count}")
         typer.echo(f"Chunks created: {result.chunk_count}")
         typer.echo(f"Chunks inserted: {result.inserted_count}")
+        typer.echo(f"Chunks skipped: {result.skipped_count}")
 
     except ValueError as e:
         typer.echo(f"Configuration error: {e}", err=True)
@@ -97,10 +112,19 @@ def search(
     ctx: Context,
     query: str = typer.Argument(..., help="Search query text"),
     top_k: int = typer.Option(
-        5, "--top-k", "-k", help="Number of results to return", min=1
+        5,
+        "--top-k",
+        "-k",
+        help="Number of results to return",
+        min=1,
     ),
     threshold: float = typer.Option(
-        0.0, "--threshold", "-t", help="Minimum similarity threshold", min=0.0, max=1.0
+        0.0,
+        "--threshold",
+        "-t",
+        help="Minimum similarity threshold",
+        min=0.0,
+        max=1.0,
     ),
 ) -> None:
     """
@@ -152,13 +176,20 @@ def search(
 def triage(
     ctx: Context,
     input_csv: Path = typer.Argument(
-        ..., help="Path to input CSV file with tickets", exists=True, file_okay=True
+        ...,
+        help="Path to input CSV file with tickets",
+        exists=True,
+        file_okay=True,
     ),
     output_csv: Path = typer.Argument(
-        ..., help="Path to output CSV file for results"
+        ...,
+        help="Path to output CSV file for results",
     ),
     min_chunks: int = typer.Option(
-        1, "--min-chunks", help="Minimum retrieved chunks required to call LLM", min=1
+        1,
+        "--min-chunks",
+        help="Minimum retrieved chunks required to call LLM",
+        min=1,
     ),
 ) -> None:
     """
@@ -232,7 +263,10 @@ def triage(
 def evaluate(
     ctx: Context,
     golden_csv: Optional[Path] = typer.Option(
-        None, "--golden", "-g", help="Path to golden/evaluation CSV"
+        None,
+        "--golden",
+        "-g",
+        help="Path to golden/evaluation CSV",
     ),
 ) -> None:
     """
@@ -283,7 +317,12 @@ def _version_callback(value: bool) -> None:
 def main(
     ctx: Context,
     version: bool = typer.Option(
-        False, "--version", "-v", callback=_version_callback, is_eager=True, help="Show version"
+        False,
+        "--version",
+        "-v",
+        callback=_version_callback,
+        is_eager=True,
+        help="Show version",
     ),
 ) -> None:
     """

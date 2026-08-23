@@ -1,3 +1,7 @@
+"""Supabase repository for document chunks and vector search."""
+
+from __future__ import annotations
+
 import os
 from collections.abc import Sequence
 from typing import Any
@@ -5,6 +9,7 @@ from typing import Any
 from supabase import Client, create_client
 
 from .corpus import DocumentChunk
+
 
 TABLE_NAME = "document_chunks"
 SEARCH_FUNCTION = "match_document_chunks"
@@ -20,11 +25,41 @@ class DocumentChunkRepository:
     def from_env(cls) -> "DocumentChunkRepository":
         url = os.getenv("SUPABASE_URL")
         key = os.getenv("SUPABASE_KEY")
+
         if not url or not key:
-            raise ValueError("SUPABASE_URL and SUPABASE_KEY must be configured")
+            raise ValueError(
+                "SUPABASE_URL and SUPABASE_KEY must be configured"
+            )
+
         return cls(create_client(url, key))
 
-    def insert_chunks(self, chunks: Sequence[DocumentChunk]) -> list[dict[str, Any]]:
+    def get_existing_chunk_ids(
+        self,
+        chunk_ids: Sequence[str],
+    ) -> set[str]:
+        """Return IDs that already exist in the document_chunks table."""
+
+        if not chunk_ids:
+            return set()
+
+        response = (
+            self._client
+            .table(TABLE_NAME)
+            .select("id")
+            .in_("id", list(chunk_ids))
+            .execute()
+        )
+
+        return {
+            row["id"]
+            for row in response.data
+            if row.get("id")
+        }
+
+    def insert_chunks(
+        self,
+        chunks: Sequence[DocumentChunk],
+    ) -> list[dict[str, Any]]:
         """Insert chunks without embeddings and return stored rows."""
 
         rows = [
@@ -37,9 +72,17 @@ class DocumentChunkRepository:
             }
             for chunk in chunks
         ]
+
         if not rows:
             return []
-        response = self._client.table(TABLE_NAME).insert(rows).execute()
+
+        response = (
+            self._client
+            .table(TABLE_NAME)
+            .insert(rows)
+            .execute()
+        )
+
         return response.data
 
     def insert_chunks_with_embeddings(
@@ -50,9 +93,12 @@ class DocumentChunkRepository:
         """Insert chunks with their embeddings and return stored rows."""
 
         if len(embeddings) != len(chunks):
-            raise ValueError("embeddings length must match chunks length")
+            raise ValueError(
+                "embeddings length must match chunks length"
+            )
 
         rows: list[dict[str, Any]] = []
+
         for index, chunk in enumerate(chunks):
             rows.append(
                 {
@@ -67,7 +113,16 @@ class DocumentChunkRepository:
 
         if not rows:
             return []
-        response = self._client.table(TABLE_NAME).insert(rows).execute()
+
+        # Upsert makes this operation safe if the same chunk is encountered
+        # again during a resumed ingestion.
+        response = (
+            self._client
+            .table(TABLE_NAME)
+            .upsert(rows, on_conflict="id")
+            .execute()
+        )
+
         return response.data
 
     def clear_chunks(self) -> None:
@@ -76,12 +131,15 @@ class DocumentChunkRepository:
         self._client.table(TABLE_NAME).delete().neq("id", "").execute()
 
     def similarity_search(
-        self, query_embedding: Sequence[float], match_count: int = 5
+        self,
+        query_embedding: Sequence[float],
+        match_count: int = 5,
     ) -> list[dict[str, Any]]:
         """Return closest chunks for an already-created query embedding."""
 
         if match_count <= 0:
             raise ValueError("match_count must be positive")
+
         response = self._client.rpc(
             SEARCH_FUNCTION,
             {
@@ -89,4 +147,5 @@ class DocumentChunkRepository:
                 "match_count": match_count,
             },
         ).execute()
+
         return response.data
