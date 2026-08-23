@@ -63,7 +63,10 @@ class GeminiEmbeddingProvider:
             response = self._client.models.embed_content(
                 model=self._model,
                 contents=batch,
-                config=types.EmbedContentConfig(task_type="RETRIEVAL_DOCUMENT"),
+                config=types.EmbedContentConfig(
+                    task_type="RETRIEVAL_DOCUMENT",
+                    output_dimensionality=EMBEDDING_DIMENSION
+                ),
             )
 
             # Extract embeddings from response
