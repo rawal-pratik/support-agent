@@ -11,7 +11,12 @@
       "Bash(python -m pytest tests/test_cli.py::TestTriageCommand::test_triage_real_target_csv_preserves_order -v)",
       "Bash(python -c \"import fastapi; print\\(fastapi.__version__\\)\")",
       "Bash(pip install *)",
-      "Bash(python -m pytest tests/test_api.py -v)"
+      "Bash(python -m pytest tests/test_api.py -v)",
+      "Bash(python -m py_compile src/support_agent/*.py)",
+      "Bash(python -m support_agent.cli --help)",
+      "Bash(python -m support_agent.cli ingest --help)",
+      "Bash(python -m support_agent.cli triage --help)",
+      "Bash(python -m support_agent.cli evaluate --help)"
     ]
   }
 }
