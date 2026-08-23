@@ -211,7 +211,16 @@ def triage(
 
     try:
         write_results(output_csv, results)
-        typer.echo(f"Processed {len(results)} tickets. Results written to {output_csv}")
+
+        # Summary statistics
+        replied_count = sum(1 for r in results if r.status == "replied")
+        escalated_count = sum(1 for r in results if r.status == "escalated")
+
+        typer.echo(f"Processed {len(tickets)} input tickets")
+        typer.echo(f"Output: {len(results)} tickets written to {output_csv}")
+        typer.echo(f"Replied: {replied_count}")
+        typer.echo(f"Escalated: {escalated_count}")
+
     except Exception as e:
         typer.echo(f"Failed to write output CSV: {e}", err=True)
         raise typer.Exit(code=1)

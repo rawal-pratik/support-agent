@@ -6,7 +6,9 @@
       "Bash(python -m pytest tests/test_cli.py::TestSearchCommand::test_search_invokes_retrieval -v --tb=short)",
       "Bash(python -m pytest tests/test_evaluation.py::TestEvaluationMetrics::test_status_exact_match_calculation -v --tb=short)",
       "Bash(python -c ' *)",
-      "Bash(python -m support_agent.cli evaluate --golden public/samples/sample_support_tickets.csv)"
+      "Bash(python -m support_agent.cli evaluate --golden public/samples/sample_support_tickets.csv)",
+      "Bash(python3 -c ' *)",
+      "Bash(python -m pytest tests/test_cli.py::TestTriageCommand::test_triage_real_target_csv_preserves_order -v)"
     ]
   }
 }
