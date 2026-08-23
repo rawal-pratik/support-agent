@@ -1,0 +1,29 @@
+# Render deployment configuration for Support Triage Agent
+# This defines a single web service using the Dockerfile
+
+services:
+  - type: web
+    name: support-triage-agent
+    env: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    # Use Render's PORT environment variable for the web service port
+    # The Dockerfile CMD uses ${PORT:-8000} which will be overridden by Render
+    healthCheckPath: /health
+    # Environment variables that must be configured in Render dashboard
+    # These are documented here but actual values must be set as secrets
+    envVars:
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: OPENROUTER_MODEL
+        sync: false
+      - key: EMBEDDING_MODEL
+        value: models/gemini-embedding-001
+      - key: EMBEDDING_BATCH_SIZE
+        value: "1"
