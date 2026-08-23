@@ -1,8 +1,8 @@
 """Terminal CLI for the support triage agent."""
-
 from pathlib import Path
 from typing import Optional
 
+from dotenv import load_dotenv
 import typer
 from typer import Context
 
@@ -15,6 +15,8 @@ from .embeddings import EmbeddingProvider, GeminiEmbeddingProvider
 from .db import DocumentChunkRepository
 from .llm import LLMProvider, OpenRouterProvider
 from .evaluation import run_evaluation, format_report
+
+load_dotenv()
 
 app = typer.Typer(
     name="support-agent",
