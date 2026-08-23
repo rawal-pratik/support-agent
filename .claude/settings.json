@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"import typer; print\\('typer', typer.__version__\\)\")",
+      "Bash(python -m pytest tests/test_cli.py -v)",
+      "Bash(python -m pytest tests/test_cli.py::TestSearchCommand::test_search_invokes_retrieval -v --tb=short)"
+    ]
+  }
+}
