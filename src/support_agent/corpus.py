@@ -7,6 +7,18 @@ from pydantic import BaseModel, ConfigDict, Field
 MARKDOWN_LINK_PATTERN = re.compile(r"^- \[(.*)\]\(([^)]+)\)\s*$")
 CATEGORY_PATTERN = re.compile(r"^##\s+(.+?)\s*$")
 
+# Articles are exported with a YAML frontmatter block, e.g.:
+#   ---
+#   title: "Integration Logs"
+#   source_url: "https://support.hackerrank.com/articles/7263906600-integration-logs"
+#   ...
+#   ---
+# We only need `source_url` out of it, so we avoid a full YAML parser (the
+# `breadcrumbs` list wouldn't round-trip cleanly through a simple parser
+# anyway) and instead pull just that one key with a couple of small regexes.
+FRONTMATTER_PATTERN = re.compile(r"\A---\s*\n(.*?\n)---[ \t]*\r?\n?", re.S)
+SOURCE_URL_PATTERN = re.compile(r'^source_url:\s*"?([^"\n]+?)"?\s*$', re.M)
+
 
 class Document(BaseModel):
     """An article referenced by the corpus catalogue."""
@@ -16,6 +28,7 @@ class Document(BaseModel):
     source_path: str
     title: str = Field(min_length=1)
     category: str = ""
+    url: str = ""
     text: str = Field(min_length=1)
 
 
@@ -28,6 +41,7 @@ class DocumentChunk(BaseModel):
     source_path: str
     title: str
     category: str = ""
+    url: str = ""
     text: str = Field(min_length=1)
 
 
@@ -66,16 +80,40 @@ def load_documents(index_path: str | Path) -> list[Document]:
                 f"{relative_path}"
             )
 
+        url, body = _split_frontmatter(
+            article_path.read_text(encoding="utf-8-sig")
+        )
+
         documents.append(
             Document(
                 source_path=resolved_relative_path,
                 title=title.strip(),
                 category=current_category,
-                text=article_path.read_text(encoding="utf-8-sig").strip(),
+                url=url,
+                text=body.strip(),
             )
         )
 
     return documents
+
+
+def _split_frontmatter(raw_text: str) -> tuple[str, str]:
+    """Pull the article's source_url out of its YAML frontmatter, if present.
+
+    Returns (url, body) where body has the frontmatter block removed so it
+    doesn't leak into chunked text. Articles without frontmatter (or without
+    a source_url key) simply get an empty url — this is a best-effort
+    enrichment, not a requirement.
+    """
+
+    match = FRONTMATTER_PATTERN.match(raw_text)
+    if not match:
+        return "", raw_text
+
+    frontmatter, body = match.group(1), raw_text[match.end():]
+    url_match = SOURCE_URL_PATTERN.search(frontmatter)
+    url = url_match.group(1).strip() if url_match else ""
+    return url, body
 
 
 def chunk_documents(
@@ -102,6 +140,7 @@ def chunk_documents(
                     source_path=document.source_path,
                     title=document.title,
                     category=document.category,
+                    url=document.url,
                     text=" ".join(chunk_words),
                 )
             )

@@ -15,6 +15,7 @@ class RetrievedChunk(BaseModel):
     source_path: str
     title: str
     category: str
+    url: str = ""
     text: str
     similarity: float
 
@@ -117,7 +118,7 @@ class SemanticRetriever:
             {"delete account","deleting account","delete my account","remove account","close account","community account"},
             {"account","delete"},
             {"account","delete","deletion"},
-            set(),
+            {"team","teams","test","tests","variant","variants"},
         ),
         "community_account": (
             {"community account","hackerrank community account","personal hackerrank account"},
@@ -129,7 +130,7 @@ class SemanticRetriever:
             {"google login","google account","google workspace","created using google","created with google"},
             {"account","login","google"},
             {"google","login","account"},
-            set(),
+            {"calendar","session"},
         ),
         "time_accommodation": (
             {"extra time","additional time","time accommodation","50% extra time","give candidate more time","extend test time"},
@@ -145,20 +146,26 @@ class SemanticRetriever:
         ),
     }
 
+    DEFAULT_MAX_CHUNKS_PER_SOURCE = 2
+
     def __init__(self, embedding_provider: EmbeddingProvider, repository: DocumentChunkRepository,
                  top_k: int = 5, similarity_threshold: float = 0.0,
-                 candidate_k: int = DEFAULT_CANDIDATE_K):
+                 candidate_k: int = DEFAULT_CANDIDATE_K,
+                 max_chunks_per_source: int = DEFAULT_MAX_CHUNKS_PER_SOURCE):
         if top_k < 1 or candidate_k < 1:
             raise ValueError("top_k and candidate_k must be positive")
         if candidate_k < top_k:
             raise ValueError("candidate_k must be greater than or equal to top_k")
         if not 0 <= similarity_threshold <= 1:
             raise ValueError("similarity_threshold must be between 0 and 1")
+        if max_chunks_per_source < 1:
+            raise ValueError("max_chunks_per_source must be positive")
         self.embedding_provider = embedding_provider
         self.repository = repository
         self.top_k = top_k
         self.threshold = similarity_threshold
         self.candidate_k = candidate_k
+        self.max_chunks_per_source = max_chunks_per_source
 
     def retrieve(self, ticket: Ticket) -> list[RetrievedChunk]:
         query = self._query(ticket)
@@ -175,6 +182,7 @@ class SemanticRetriever:
                 source_path=row.get("source_path", ""),
                 title=row.get("title", ""),
                 category=row.get("category", ""),
+                url=row.get("url", ""),
                 text=row.get("chunk_text", ""),
                 similarity=self._float(row.get("similarity")),
             )
@@ -203,12 +211,19 @@ class SemanticRetriever:
 
         ranked.sort(key=lambda x: x[0], reverse=True)
 
-        selected, seen = [], set()
+        # Cap chunks per source document instead of taking only the single
+        # best chunk. A document that has been split across multiple chunks
+        # during ingestion (e.g. an "advantages" section and a separate
+        # "limitations" section of the same article) can otherwise lose
+        # everything but its top-scoring chunk, silently dropping facts the
+        # LLM needs (see: variants ticket losing its documented
+        # disadvantages because only the advantages chunk survived here).
+        selected, counts = [], {}
         for _, chunk in ranked:
             key = chunk.source_path.lower().strip()
-            if key in seen:
+            if counts.get(key, 0) >= self.max_chunks_per_source:
                 continue
-            seen.add(key)
+            counts[key] = counts.get(key, 0) + 1
             selected.append(chunk)
             if len(selected) == self.top_k:
                 break

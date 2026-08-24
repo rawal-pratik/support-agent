@@ -18,18 +18,26 @@ class LLMProvider(Protocol):
         ...
 
 
+class TruncatedResponseError(RuntimeError):
+    """Raised when the model's completion was cut off before it finished."""
+
+
 class OpenRouterProvider:
     DEFAULT_MODEL = "nvidia/nemotron-3-ultra-550b-a55b:free"
+    DEFAULT_MAX_TOKENS = 3000
+    MAX_TOKENS_CEILING = 6000
 
     def __init__(self, api_key: str, model: str = DEFAULT_MODEL,
                  base_url: str = "https://openrouter.ai/api/v1",
-                 timeout: float = 30.0, max_retries: int = 1):
+                 timeout: float = 45.0, max_retries: int = 2,
+                 max_tokens: int = DEFAULT_MAX_TOKENS):
         if not api_key:
             raise ValueError("api_key must be provided")
         self.api_key = api_key
         self.model = model
         self.base_url = base_url.rstrip("/")
         self.max_retries = max(0, max_retries)
+        self.max_tokens = max_tokens
         self.client = httpx.Client(timeout=timeout)
 
     @classmethod
@@ -37,22 +45,43 @@ class OpenRouterProvider:
         key = os.getenv("OPENROUTER_API_KEY")
         if not key:
             raise ValueError("OPENROUTER_API_KEY must be configured")
-        return cls(key, os.getenv("OPENROUTER_MODEL", cls.DEFAULT_MODEL))
+        return cls(
+            key,
+            os.getenv("OPENROUTER_MODEL", cls.DEFAULT_MODEL),
+            max_tokens=int(os.getenv("OPENROUTER_MAX_TOKENS", cls.DEFAULT_MAX_TOKENS)),
+        )
 
     def generate(self, ticket: Ticket, policy_decision: PolicyDecision,
                  retrieved_chunks: list[RetrievedChunk]) -> AgentResult:
         prompt = self._prompt(ticket, policy_decision, retrieved_chunks)
         last_error = None
+        # temperature=0 means a byte-for-byte retry reproduces the same
+        # failure. A retry is only worth doing if something about the call
+        # actually changes between attempts: on truncation we grow the
+        # token budget, on anything else we nudge the model with a short
+        # corrective note appended to the prompt.
+        budget = self.max_tokens
+        note = ""
         for attempt in range(self.max_retries + 1):
             try:
-                return self._parse(self._call(prompt))
+                content = self._call(prompt + note, budget)
+                return self._parse(content)
+            except TruncatedResponseError as exc:
+                last_error = exc
+                budget = min(int(budget * 1.6), self.MAX_TOKENS_CEILING)
+                note = ""
             except (ValueError, RuntimeError) as exc:
                 last_error = exc
-                if attempt < self.max_retries:
-                    continue
+                note = (
+                    "\n\nNOTE: your previous response was not valid JSON. "
+                    "Return ONLY a single valid JSON object, fully closed, "
+                    "with no markdown fences or trailing text."
+                )
+            if attempt == self.max_retries:
+                break
         raise last_error or RuntimeError("LLM generation failed")
 
-    def _call(self, prompt: str) -> str:
+    def _call(self, prompt: str, max_tokens: int) -> str:
         response = self.client.post(
             f"{self.base_url}/chat/completions",
             headers={
@@ -66,7 +95,7 @@ class OpenRouterProvider:
                     {"role": "user", "content": prompt},
                 ],
                 "temperature": 0,
-                "max_tokens": 1800,
+                "max_tokens": max_tokens,
                 "response_format": {"type": "json_object"},
             },
         )
@@ -79,13 +108,43 @@ class OpenRouterProvider:
 
         try:
             data = response.json()
-            content = data["choices"][0]["message"]["content"]
+            choice = data["choices"][0]
+            content = choice["message"]["content"]
         except (ValueError, KeyError, IndexError, TypeError) as exc:
             raise RuntimeError(f"Unexpected OpenRouter response: {response.text}") from exc
+
+        # A truncated completion is a distinct, deterministic failure mode
+        # (fixed by raising max_tokens on retry), not a random one — treat
+        # it separately from "the model produced garbage JSON".
+        if choice.get("finish_reason") == "length":
+            raise TruncatedResponseError(
+                f"OpenRouter response truncated at max_tokens={max_tokens} "
+                "before completion finished"
+            )
 
         if not isinstance(content, str) or not content.strip():
             raise ValueError("LLM returned an empty response")
         return content
+
+    # Articles follow a "<numeric-id>-slug" naming convention in both their
+    # URL and their source filename (see corpus.py's frontmatter/filename
+    # handling). We extract that id here, in code, and hand the model the
+    # exact label to use — safer than asking the model to transcribe a long
+    # digit string out of a URL itself, which it will occasionally get
+    # wrong. Matched as a leftmost, un-anchored search (not "ends the
+    # string") because some article slugs contain literal, un-encoded
+    # slashes carried over from the article title (e.g. an "HTML/CSS/
+    # JavaScript" title), which would otherwise push the id out of an
+    # end-anchored match.
+    ARTICLE_NUMBER_PATTERN = re.compile(r"/(\d{4,})-")
+    ARTICLE_FILENAME_PATTERN = re.compile(r"(?:^|/)(\d{4,})-[^/]+\.md$")
+
+    @classmethod
+    def _citation_label(cls, chunk: RetrievedChunk, index: int) -> str:
+        match = cls.ARTICLE_NUMBER_PATTERN.search(chunk.url) if chunk.url else None
+        if not match and chunk.source_path:
+            match = cls.ARTICLE_FILENAME_PATTERN.search(chunk.source_path)
+        return f"Article {match.group(1)}" if match else f"Document {index}"
 
     @staticmethod
     def _system_prompt() -> str:
@@ -108,7 +167,23 @@ The deterministic policy is authoritative:
 - if Request Type is invalid, do not use unrelated documentation.
 
 Every factual claim must be supported by the supplied documents.
-Use document numbers in justification.
+
+Keep "response" as terse and direct as a real support agent's reply:
+steps or facts only, no preamble, no restating the question. Never write
+"Document 1", "Document 2", etc. inside "response" — those labels are
+internal and meaningless to the customer. If a document has a URL, end
+"response" with a final line, exactly:
+Source(s): <url1> <url2> ...
+listing, in order of first use and separated by single spaces, the URL of
+every document actually cited above (each URL used once, even if cited
+multiple times). Omit the "Source(s)" line entirely if none of the
+documents you relied on has a URL.
+
+Keep "justification" to short paraphrases citing sources by the exact
+"Citation label" given for each document below (e.g. "Article 7263906600"),
+not long quotes. Use the label verbatim — do not renumber, reformat, or
+invent one. If a document's label is "Document N" (no article number was
+determinable for it), use that label as given.
 
 Return ONLY one valid JSON object with exactly:
 status, product_area, response, justification, request_type
@@ -127,7 +202,10 @@ No markdown fences, no commentary, no extra text."""
         for i, c in enumerate(chunks, 1):
             docs.append(
                 f"DOCUMENT {i}\n"
+                f"Citation label (use this exact text in justification): "
+                f"{OpenRouterProvider._citation_label(c, i)}\n"
                 f"Source: {c.source_path}\n"
+                f"URL: {c.url or '(no URL available for this document)'}\n"
                 f"Title: {c.title}\n"
                 f"Category: {c.category}\n"
                 f"Content:\n{c.text}\n"
@@ -137,8 +215,11 @@ No markdown fences, no commentary, no extra text."""
         schema = {
             "status": "replied",
             "product_area": "exact documentation category",
-            "response": "answer grounded in documents",
-            "justification": "Document 1 ...",
+            "response": (
+                "Answer grounded in documents, with no Document N labels.\n"
+                "Source(s): https://support.hackerrank.com/articles/example"
+            ),
+            "justification": "Article 7263906600 ...",
             "request_type": policy.request_type.value,
         }
         return (
@@ -152,8 +233,8 @@ No markdown fences, no commentary, no extra text."""
             f"Schema example: {json.dumps(schema, ensure_ascii=False)}"
         )
 
-    @staticmethod
-    def _parse(text: str) -> AgentResult:
+    @classmethod
+    def _parse(cls, text: str) -> AgentResult:
         cleaned = text.strip()
         candidates = [cleaned]
 
@@ -180,9 +261,29 @@ No markdown fences, no commentary, no extra text."""
             raise ValueError(f"LLM returned invalid JSON: {last_error or 'no JSON object found'}")
 
         try:
-            return AgentResult(**data)
+            result = AgentResult(**data)
         except Exception as exc:
             raise ValueError(f"LLM response does not match required schema: {exc}") from exc
+
+        return result.model_copy(
+            update={"product_area": cls._normalize_product_area(result.product_area)}
+        )
+
+    @staticmethod
+    def _normalize_product_area(raw: str) -> str:
+        # Document categories are stored as "Top Level / Sub Category"
+        # (and sometimes "Top Level / Sub (Detail)"), e.g.
+        # "Screen / Managing Tests" or "Integrations / Single Sign-On (SSO)".
+        # The expected product_area is the top-level segment only, in the
+        # snake_case style already used elsewhere in this codebase (see
+        # orchestrator.py's "conversation_management"). Adjust this mapping
+        # once the corpus's actual category taxonomy (corpus.py/index.md)
+        # is available, in case top-level segments don't line up 1:1 with
+        # the grading taxonomy.
+        if not raw or not raw.strip():
+            return "unknown"
+        top = raw.split("/")[0].strip().lower()
+        return re.sub(r"\s+", "_", top) or "unknown"
 
     def close(self):
         self.client.close()

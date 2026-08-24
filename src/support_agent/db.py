@@ -33,29 +33,6 @@ class DocumentChunkRepository:
 
         return cls(create_client(url, key))
 
-    def get_existing_chunk_ids(
-        self,
-        chunk_ids: Sequence[str],
-    ) -> set[str]:
-        """Return IDs that already exist in the document_chunks table."""
-
-        if not chunk_ids:
-            return set()
-
-        response = (
-            self._client
-            .table(TABLE_NAME)
-            .select("id")
-            .in_("id", list(chunk_ids))
-            .execute()
-        )
-
-        return {
-            row["id"]
-            for row in response.data
-            if row.get("id")
-        }
-
     def insert_chunks(
         self,
         chunks: Sequence[DocumentChunk],

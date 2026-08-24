@@ -20,7 +20,7 @@ load_dotenv()
 app = typer.Typer(name="support-agent", help="Support triage agent CLI", no_args_is_help=True, add_completion=False)
 
 
-def _services(top_k=5, candidate_k=30, threshold=0.0):
+def _services(top_k=5, candidate_k=30, threshold=0.0, max_chunks_per_source=2):
     if candidate_k < top_k:
         raise ValueError("candidate_k must be greater than or equal to top_k")
     return (
@@ -30,6 +30,7 @@ def _services(top_k=5, candidate_k=30, threshold=0.0):
             top_k=top_k,
             candidate_k=candidate_k,
             similarity_threshold=threshold,
+            max_chunks_per_source=max_chunks_per_source,
         ),
         OpenRouterProvider.from_env(),
     )
@@ -38,8 +39,8 @@ def _services(top_k=5, candidate_k=30, threshold=0.0):
 @app.command()
 def ingest(
     index_path: Path = typer.Option("public/corpus/index.md", "--index-path", "-i", exists=True),
-    chunk_size: int = typer.Option(400, "--chunk-size", min=1),
-    overlap: int = typer.Option(50, "--overlap", min=0),
+    chunk_size: int = typer.Option(600, "--chunk-size", min=1),
+    overlap: int = typer.Option(75, "--overlap", min=0),
     max_chunks: Optional[int] = typer.Option(None, "--max-chunks"),
     clear: bool = typer.Option(True, "--clear/--no-clear"),
 ):
@@ -68,6 +69,7 @@ def search(
     top_k: int = typer.Option(5, "--top-k", "-k", min=1),
     candidate_k: int = typer.Option(30, "--candidate-k", min=1),
     threshold: float = typer.Option(0.0, "--threshold", "-t", min=0.0, max=1.0),
+    max_chunks_per_source: int = typer.Option(2, "--max-chunks-per-source", min=1),
 ):
     if not query.strip():
         raise typer.BadParameter("query cannot be empty")
@@ -78,6 +80,7 @@ def search(
             top_k=top_k,
             candidate_k=candidate_k,
             similarity_threshold=threshold,
+            max_chunks_per_source=max_chunks_per_source,
         )
         chunks = retriever.retrieve(Ticket(subject="", issue=query))
         if not chunks:
@@ -106,13 +109,14 @@ def triage(
     top_k: int = typer.Option(5, "--top-k", min=1),
     candidate_k: int = typer.Option(30, "--candidate-k", min=1),
     threshold: float = typer.Option(0.0, "--threshold", min=0.0, max=1.0),
+    max_chunks_per_source: int = typer.Option(2, "--max-chunks-per-source", min=1),
 ):
     if candidate_k < top_k:
         raise typer.BadParameter("candidate_k must be greater than or equal to top_k")
 
     try:
         tickets = read_tickets(input_csv)
-        retriever, llm = _services(top_k, candidate_k, threshold)
+        retriever, llm = _services(top_k, candidate_k, threshold, max_chunks_per_source)
         agent = TriageOrchestrator(retriever, llm, min_chunks)
         results = [agent.process_ticket(ticket) for ticket in tickets]
         write_results(output_csv, results)
@@ -133,9 +137,10 @@ def evaluate(
     top_k: int = typer.Option(5, "--top-k", min=1),
     candidate_k: int = typer.Option(30, "--candidate-k", min=1),
     threshold: float = typer.Option(0.0, "--threshold", min=0.0, max=1.0),
+    max_chunks_per_source: int = typer.Option(2, "--max-chunks-per-source", min=1),
 ):
     try:
-        retriever, llm = _services(top_k, candidate_k, threshold)
+        retriever, llm = _services(top_k, candidate_k, threshold, max_chunks_per_source)
         report = run_evaluation(golden_csv, TriageOrchestrator(retriever, llm))
         typer.echo(format_report(report))
     except Exception as exc:
