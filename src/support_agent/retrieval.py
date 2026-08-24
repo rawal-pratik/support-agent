@@ -1,4 +1,4 @@
-"""Intent-aware hybrid retrieval for support tickets."""
+"""Hybrid semantic + lexical retrieval for support documentation."""
 
 import re
 from typing import Protocol
@@ -11,8 +11,6 @@ from .models import Ticket
 
 
 class RetrievedChunk(BaseModel):
-    """A document chunk retrieved for a ticket with similarity score."""
-
     chunk_id: str
     source_path: str
     title: str
@@ -22,46 +20,14 @@ class RetrievedChunk(BaseModel):
 
 
 class Retriever(Protocol):
-    """Protocol for ticket retrieval."""
-
     def retrieve(self, ticket: Ticket) -> list[RetrievedChunk]:
-        """Return relevant chunks for a ticket."""
         ...
 
 
 class SemanticRetriever:
-    """
-    Intent-aware hybrid semantic + lexical retriever.
-
-    Retrieval pipeline:
-
-        Ticket
-          ↓
-        Query normalization
-          ↓
-        Query intent / concept extraction
-          ↓
-        Semantic candidate retrieval
-          ↓
-        Hybrid scoring
-          ↓
-        Intent/object matching
-          ↓
-        Exact phrase/title matching
-          ↓
-        Source/article deduplication
-          ↓
-        Final top-K results
-
-    The retriever intentionally uses ONE embedding request per ticket.
-    Query expansion is performed locally so retrieval improvements do
-    not multiply embedding API usage.
-    """
+    """Retrieve semantic candidates and rerank them using support-specific signals."""
 
     DEFAULT_CANDIDATE_K = 30
-
-    # Semantic similarity remains the strongest signal, but the other
-    # signals are now more meaningful than in the original implementation.
     SEMANTIC_WEIGHT = 0.55
     LEXICAL_WEIGHT = 0.10
     TITLE_WEIGHT = 0.12
@@ -70,1166 +36,296 @@ class SemanticRetriever:
     INTENT_WEIGHT = 0.08
 
     STOPWORDS = {
-        "a",
-        "an",
-        "and",
-        "are",
-        "as",
-        "at",
-        "be",
-        "been",
-        "but",
-        "by",
-        "can",
-        "could",
-        "did",
-        "do",
-        "does",
-        "for",
-        "from",
-        "get",
-        "getting",
-        "give",
-        "given",
-        "has",
-        "have",
-        "how",
-        "i",
-        "if",
-        "in",
-        "into",
-        "is",
-        "it",
-        "me",
-        "my",
-        "of",
-        "on",
-        "or",
-        "our",
-        "please",
-        "should",
-        "that",
-        "the",
-        "their",
-        "them",
-        "there",
-        "this",
-        "to",
-        "was",
-        "we",
-        "what",
-        "when",
-        "where",
-        "which",
-        "who",
-        "why",
-        "will",
-        "with",
-        "would",
-        "you",
-        "your",
+        "a","an","and","are","as","at","be","been","but","by","can","could",
+        "did","do","does","for","from","get","getting","give","given","has",
+        "have","how","i","if","in","into","is","it","me","my","of","on","or",
+        "our","please","should","that","the","their","them","there","this",
+        "to","was","we","what","when","where","which","who","why","will",
+        "with","would","you","your",
     }
 
-    # ------------------------------------------------------------------
-    # Support-domain concept groups
-    # ------------------------------------------------------------------
-
-    CONCEPT_GROUPS = {
-        "expiration": {
-            "expiration",
-            "expire",
-            "expires",
-            "expired",
-            "expiry",
-            "expiring",
-            "expiration_date",
-            "expiration_time",
-            "expiry_date",
-            "expiry_time",
-            "expiration_period",
-        },
-        "active": {
-            "active",
-            "inactive",
-            "activation",
-            "deactivate",
-            "deactivated",
-            "remain",
-            "remains",
-            "stays",
-            "stay",
-            "available",
-            "availability",
-            "valid",
-            "validity",
-            "lifespan",
-            "duration",
-            "enabled",
-            "disabled",
-        },
-        "test": {
-            "test",
-            "tests",
-            "assessment",
-            "assessments",
-        },
-        "invitation": {
-            "invite",
-            "invites",
-            "invitation",
-            "invitations",
-            "invited",
-        },
-        "variant": {
-            "variant",
-            "variants",
-        },
-        "account": {
-            "account",
-            "accounts",
-            "profile",
-            "user",
-            "users",
-        },
-        "community": {
-            "community",
-        },
-        "delete": {
-            "delete",
-            "deletion",
-            "remove",
-            "removal",
-            "erase",
-            "close",
-            "deactivate",
-        },
-        "login": {
-            "login",
-            "log",
-            "signin",
-            "sign",
-            "authenticate",
-            "authentication",
-            "sso",
-        },
-        "google": {
-            "google",
-            "workspace",
-        },
-        "candidate": {
-            "candidate",
-            "candidates",
-            "applicant",
-            "applicants",
-        },
-        "invite": {
-            "invite",
-            "invites",
-            "invitation",
-            "invitations",
-            "reinvite",
-            "reinvitation",
-        },
-        "time_accommodation": {
-            "accommodation",
-            "accommodations",
-            "extra_time",
-            "additional_time",
-            "extended_time",
-            "minutes",
-            "percentage",
-            "percent",
-        },
-        "reinvite": {
-            "reinvite",
-            "reinvitation",
-            "reinvite",
-            "resend",
-        },
-        "interview": {
-            "interview",
-            "interviews",
-            "interviewer",
-            "interviewers",
-        },
-        "security": {
-            "security",
-            "privacy",
-            "gdpr",
-            "infosec",
-            "compliance",
-        },
-        "subscription": {
-            "subscription",
-            "subscriptions",
-            "plan",
-            "plans",
-            "cancel",
-            "pause",
-        },
-        "payment": {
-            "payment",
-            "payments",
-            "billing",
-            "charge",
-            "charges",
-            "invoice",
-            "invoices",
-        },
-        "refund": {
-            "refund",
-            "refunds",
-            "reimbursement",
-            "reimburse",
-        },
+    CONCEPTS = {
+        "expiration": {"expiration","expire","expires","expired","expiry","expiring","expiration_date","expiration_time","expiry_date","expiry_time"},
+        "active": {"active","inactive","activation","deactivate","deactivated","remain","remains","stays","stay","available","availability","valid","validity","lifespan","duration","enabled","disabled"},
+        "test": {"test","tests","assessment","assessments"},
+        "invitation": {"invite","invites","invitation","invitations","invited"},
+        "variant": {"variant","variants"},
+        "account": {"account","accounts","profile","user","users"},
+        "community": {"community"},
+        "delete": {"delete","deletion","remove","removal","erase","close","deactivate"},
+        "login": {"login","log","signin","sign","authenticate","authentication","sso"},
+        "google": {"google","workspace"},
+        "candidate": {"candidate","candidates","applicant","applicants"},
+        "invite": {"invite","invites","invitation","invitations","reinvite","reinvitation"},
+        "time_accommodation": {"accommodation","accommodations","extra_time","additional_time","extended_time","minutes","percentage","percent"},
+        "reinvite": {"reinvite","reinvitation","resend"},
     }
 
-    # ------------------------------------------------------------------
-    # Phrase → concepts
-    # ------------------------------------------------------------------
-
-    PHRASE_CONCEPTS = {
-        "stay active": {"expiration", "active", "test"},
-        "remain active": {"expiration", "active", "test"},
-        "how long": {"expiration", "duration"},
-        "active in the system": {"expiration", "active", "test"},
-        "test active": {"expiration", "active", "test"},
-        "test expiration": {"expiration", "test"},
-        "test expiry": {"expiration", "test"},
-        "expiration time": {"expiration", "duration"},
-        "expiry time": {"expiration", "duration"},
-        "test lifespan": {"expiration", "active", "test"},
-        "test duration": {"expiration", "duration", "test"},
-        "invitation expiry": {"expiration", "invitation"},
-        "invite expiry": {"expiration", "invitation"},
-        "test invitation": {"invitation", "test"},
-        "delete account": {"delete", "account"},
-        "deleting account": {"delete", "account"},
-        "remove account": {"delete", "account"},
-        "close account": {"delete", "account"},
-        "community account": {"account", "community"},
-        "google login": {"login", "google", "account"},
-        "google workspace": {"login", "google", "account"},
-        "test variant": {"test", "variant"},
-        "test variants": {"test", "variant"},
+    PHRASES = {
+        "stay active": {"expiration","active","test"},
+        "remain active": {"expiration","active","test"},
+        "how long": {"expiration","duration"},
+        "active in the system": {"expiration","active","test"},
+        "test active": {"expiration","active","test"},
+        "test expiration": {"expiration","test"},
+        "test expiry": {"expiration","test"},
+        "expiration time": {"expiration","duration"},
+        "expiry time": {"expiration","duration"},
+        "test lifespan": {"expiration","active","test"},
+        "test duration": {"expiration","duration","test"},
+        "invitation expiry": {"expiration","invitation"},
+        "invite expiry": {"expiration","invitation"},
+        "test invitation": {"invitation","test"},
+        "delete account": {"delete","account"},
+        "deleting account": {"delete","account"},
+        "remove account": {"delete","account"},
+        "close account": {"delete","account"},
+        "community account": {"account","community"},
+        "google login": {"login","google","account"},
+        "google workspace": {"login","google","account"},
+        "test variant": {"test","variant"},
+        "test variants": {"test","variant"},
         "time accommodation": {"time_accommodation"},
         "extra time": {"time_accommodation"},
-        "more time": {"time_accommodation"},
         "additional time": {"time_accommodation"},
-        "reinvite candidate": {"reinvite", "candidate"},
-        "reinvite the candidate": {"reinvite", "candidate"},
-        "send new invitation": {"reinvite", "invite"},
+        "reinvite candidate": {"candidate","reinvite"},
+        "reinvite the candidate": {"candidate","reinvite"},
+        "send new invitation": {"reinvite","invite"},
     }
 
-    # ------------------------------------------------------------------
-    # Object / intent relationships
-    #
-    # These are deliberately asymmetric. For example, "test expiration"
-    # is a much stronger match for a question about how long a test stays
-    # active than merely seeing "expiration" somewhere in a document.
-    # ------------------------------------------------------------------
-
-    INTENT_PATTERNS = {
-        "test_expiration": {
-            "phrases": {
-                "how long do tests stay active",
-                "how long does a test stay active",
-                "how long do tests remain active",
-                "how long does the test remain active",
-                "test active in the system",
-                "test expiration",
-                "test expiry",
-                "test expiration time",
-                "test lifespan",
-            },
-            "concepts": {
-                "test",
-                "expiration",
-                "active",
-            },
-            "preferred_title_terms": {
-                "test",
-                "expiration",
-                "expire",
-                "expiry",
-            },
-            "avoid_title_terms": {
-                "invite",
-                "invitation",
-            },
-        },
-        "invitation_expiration": {
-            "phrases": {
-                "invitation expiry",
-                "invitation expiration",
-                "invite expiry",
-                "invite expiration",
-                "how long invitations remain valid",
-            },
-            "concepts": {
-                "invitation",
-                "expiration",
-            },
-            "preferred_title_terms": {
-                "invite",
-                "invitation",
-                "expiry",
-                "expiration",
-            },
-        },
-        "test_variant": {
-            "phrases": {
-                "test variant",
-                "test variants",
-                "new test versus variant",
-                "new test vs variant",
-                "test vs variant",
-                "difference between test and variant",
-                "difference between creating a new test and creating a test variant",
-            },
-            "concepts": {
-                "test",
-                "variant",
-            },
-            "preferred_title_terms": {
-                "test",
-                "variant",
-            },
-        },
-        "account_deletion": {
-            "phrases": {
-                "delete account",
-                "deleting account",
-                "delete my account",
-                "remove account",
-                "close account",
-                "community account",
-            },
-            "concepts": {
-                "account",
-                "delete",
-            },
-            "preferred_title_terms": {
-                "account",
-                "delete",
-                "deletion",
-            },
-        },
-        "community_account": {
-            "phrases": {
-                "community account",
-                "hackerrank community account",
-                "personal hackerrank account",
-            },
-            "concepts": {
-                "account",
-                "community",
-            },
-            "preferred_title_terms": {
-                "account",
-                "community",
-            },
-        },
-        "google_account": {
-            "phrases": {
-                "google login",
-                "google account",
-                "google workspace",
-                "created using google",
-                "created with google",
-            },
-            "concepts": {
-                "account",
-                "login",
-                "google",
-            },
-            "preferred_title_terms": {
-                "google",
-                "login",
-                "account",
-            },
-        },
-        "time_accommodation": {
-            "phrases": {
-                "extra time",
-                "additional time",
-                "time accommodation",
-                "50% extra time",
-                "give candidate more time",
-                "extend test time",
-            },
-            "concepts": {
-                "candidate",
-                "time_accommodation",
-            },
-            "preferred_title_terms": {
-                "time",
-                "accommodation",
-                "candidate",
-            },
-        },
-        "candidate_reinvite": {
-            "phrases": {
-                "reinvite candidate",
-                "reinvite the candidate",
-                "send new invitation",
-                "invite candidate again",
-            },
-            "concepts": {
-                "candidate",
-                "invite",
-                "reinvite",
-            },
-            "preferred_title_terms": {
-                "invite",
-                "candidate",
-                "reinvite",
-            },
-        },
+    INTENTS = {
+        "test_expiration": (
+            {"how long do tests stay active","how long does a test stay active","how long do tests remain active",
+             "how long does the test remain active","test active in the system","test expiration","test expiry","test expiration time","test lifespan"},
+            {"test","expiration","active"},
+            {"test","expiration","expire","expiry"},
+            {"invite","invitation"},
+        ),
+        "invitation_expiration": (
+            {"invitation expiry","invitation expiration","invite expiry","invite expiration","how long invitations remain valid"},
+            {"invitation","expiration"},
+            {"invite","invitation","expiry","expiration"},
+            set(),
+        ),
+        "test_variant": (
+            {"test variant","test variants","new test versus variant","new test vs variant","test vs variant","difference between test and variant","difference between creating a new test and creating a test variant"},
+            {"test","variant"},
+            {"test","variant"},
+            set(),
+        ),
+        "account_deletion": (
+            {"delete account","deleting account","delete my account","remove account","close account","community account"},
+            {"account","delete"},
+            {"account","delete","deletion"},
+            set(),
+        ),
+        "community_account": (
+            {"community account","hackerrank community account","personal hackerrank account"},
+            {"account","community"},
+            {"account","community"},
+            set(),
+        ),
+        "google_account": (
+            {"google login","google account","google workspace","created using google","created with google"},
+            {"account","login","google"},
+            {"google","login","account"},
+            set(),
+        ),
+        "time_accommodation": (
+            {"extra time","additional time","time accommodation","50% extra time","give candidate more time","extend test time"},
+            {"candidate","time_accommodation"},
+            {"time","accommodation","candidate"},
+            set(),
+        ),
+        "candidate_reinvite": (
+            {"reinvite candidate","reinvite the candidate","send new invitation","invite candidate again"},
+            {"candidate","invite","reinvite"},
+            {"invite","candidate","reinvite"},
+            set(),
+        ),
     }
 
-    def __init__(
-        self,
-        embedding_provider: EmbeddingProvider,
-        repository: DocumentChunkRepository,
-        top_k: int = 5,
-        similarity_threshold: float = 0.0,
-        candidate_k: int = DEFAULT_CANDIDATE_K,
-    ):
-        """
-        Args:
-            embedding_provider:
-                Provider used to create the retrieval query embedding.
-
-            repository:
-                Repository containing document chunks and vector search.
-
-            top_k:
-                Number of final chunks returned.
-
-            similarity_threshold:
-                Minimum semantic similarity required for a candidate.
-
-            candidate_k:
-                Number of semantic candidates retrieved before reranking.
-        """
-        if top_k <= 0:
-            raise ValueError("top_k must be positive")
-
-        if not 0.0 <= similarity_threshold <= 1.0:
-            raise ValueError(
-                "similarity_threshold must be between 0.0 and 1.0"
-            )
-
-        if candidate_k <= 0:
-            raise ValueError("candidate_k must be positive")
-
+    def __init__(self, embedding_provider: EmbeddingProvider, repository: DocumentChunkRepository,
+                 top_k: int = 5, similarity_threshold: float = 0.0,
+                 candidate_k: int = DEFAULT_CANDIDATE_K):
+        if top_k < 1 or candidate_k < 1:
+            raise ValueError("top_k and candidate_k must be positive")
         if candidate_k < top_k:
-            raise ValueError(
-                "candidate_k must be greater than or equal to top_k"
-            )
-
-        self._embedding_provider = embedding_provider
-        self._repository = repository
-        self._top_k = top_k
-        self._similarity_threshold = similarity_threshold
-        self._candidate_k = candidate_k
-
-    # ==================================================================
-    # Main retrieval
-    # ==================================================================
+            raise ValueError("candidate_k must be greater than or equal to top_k")
+        if not 0 <= similarity_threshold <= 1:
+            raise ValueError("similarity_threshold must be between 0 and 1")
+        self.embedding_provider = embedding_provider
+        self.repository = repository
+        self.top_k = top_k
+        self.threshold = similarity_threshold
+        self.candidate_k = candidate_k
 
     def retrieve(self, ticket: Ticket) -> list[RetrievedChunk]:
-        """
-        Retrieve the strongest documentation for a support ticket.
-
-        The semantic database is queried once. Local query expansion and
-        intent detection are then used to rerank the semantic candidates.
-
-        This deliberately avoids generating multiple embeddings for the
-        same ticket, which would unnecessarily increase embedding API usage.
-        """
-
-        ticket_text = self._build_query_text(ticket)
-
-        if not ticket_text:
+        query = self._query(ticket)
+        if not query:
+            return []
+        embedding = self.embedding_provider.embed_query(query)
+        if not embedding:
             return []
 
-        query_embedding = self._embedding_provider.embed_query(
-            ticket_text
-        )
-
-        if not query_embedding:
-            return []
-
-        results = self._repository.similarity_search(
-            query_embedding,
-            match_count=self._candidate_k,
-        )
-
-        candidates: list[RetrievedChunk] = []
-
-        for result in results:
-            similarity = self._safe_float(
-                result.get("similarity", 0.0)
+        rows = self.repository.similarity_search(embedding, match_count=self.candidate_k)
+        candidates = [
+            RetrievedChunk(
+                chunk_id=row.get("id", ""),
+                source_path=row.get("source_path", ""),
+                title=row.get("title", ""),
+                category=row.get("category", ""),
+                text=row.get("chunk_text", ""),
+                similarity=self._float(row.get("similarity")),
             )
-
-            if similarity < self._similarity_threshold:
-                continue
-
-            source_path = result.get("source_path", "")
-
-            if not source_path:
-                continue
-
-            candidates.append(
-                RetrievedChunk(
-                    chunk_id=result.get("id", ""),
-                    source_path=source_path,
-                    title=result.get("title", ""),
-                    category=result.get("category", ""),
-                    text=result.get("chunk_text", ""),
-                    similarity=similarity,
-                )
-            )
-
+            for row in rows
+            if row.get("source_path") and self._float(row.get("similarity")) >= self.threshold
+        ]
         if not candidates:
             return []
 
-        query_tokens = self._tokenize(ticket_text)
-        query_concepts = self._expand_concepts(ticket_text)
-        query_phrases = self._matched_phrases(ticket_text)
-        query_intents = self._detect_intents(ticket_text)
+        q_tokens = self._tokens(query)
+        q_concepts = self._concepts(query)
+        q_phrases = self._phrases(query)
+        q_intents = self._intents(query)
 
-        scored_candidates: list[
-            tuple[float, RetrievedChunk]
-        ] = []
-
+        ranked = []
         for chunk in candidates:
-            lexical_score = self._lexical_score(
-                query_tokens=query_tokens,
-                chunk=chunk,
-            )
-
-            title_score = self._title_score(
-                query_tokens=query_tokens,
-                title=chunk.title,
-            )
-
-            concept_score = self._concept_score(
-                query_concepts=query_concepts,
-                chunk=chunk,
-            )
-
-            phrase_score = self._phrase_score(
-                query_phrases=query_phrases,
-                chunk=chunk,
-            )
-
-            intent_score = self._intent_score(
-                query_intents=query_intents,
-                chunk=chunk,
-            )
-
-            final_score = (
+            score = (
                 self.SEMANTIC_WEIGHT * chunk.similarity
-                + self.LEXICAL_WEIGHT * lexical_score
-                + self.TITLE_WEIGHT * title_score
-                + self.CONCEPT_WEIGHT * concept_score
-                + self.PHRASE_WEIGHT * phrase_score
-                + self.INTENT_WEIGHT * intent_score
+                + self.LEXICAL_WEIGHT * self._lexical(q_tokens, chunk)
+                + self.TITLE_WEIGHT * self._title(q_tokens, chunk.title)
+                + self.CONCEPT_WEIGHT * self._concept(q_concepts, chunk)
+                + self.PHRASE_WEIGHT * self._phrase(q_phrases, chunk)
+                + self.INTENT_WEIGHT * self._intent(q_intents, chunk)
             )
+            ranked.append((score, chunk))
 
-            scored_candidates.append(
-                (final_score, chunk)
-            )
+        ranked.sort(key=lambda x: x[0], reverse=True)
 
-        scored_candidates.sort(
-            key=lambda item: item[0],
-            reverse=True,
-        )
-
-        # --------------------------------------------------------------
-        # Article/source deduplication.
-        #
-        # A source may contain several chunks. Keep only the strongest
-        # chunk from each source so the LLM gets diverse evidence.
-        # --------------------------------------------------------------
-
-        selected: list[RetrievedChunk] = []
-        seen_sources: set[str] = set()
-
-        for _, chunk in scored_candidates:
-            source_key = self._source_key(chunk.source_path)
-
-            if source_key in seen_sources:
+        selected, seen = [], set()
+        for _, chunk in ranked:
+            key = chunk.source_path.lower().strip()
+            if key in seen:
                 continue
-
-            seen_sources.add(source_key)
+            seen.add(key)
             selected.append(chunk)
-
-            if len(selected) >= self._top_k:
+            if len(selected) == self.top_k:
                 break
-
         return selected
 
-    # ==================================================================
-    # Query construction
-    # ==================================================================
-
     @staticmethod
-    def _build_query_text(ticket: Ticket) -> str:
-        """
-        Combine subject and issue into the retrieval query.
-
-        The issue receives slightly more importance conceptually because
-        it normally contains the actual support intent.
-        """
-
+    def _query(ticket: Ticket) -> str:
         subject = (ticket.subject or "").strip()
         issue = (ticket.issue or "").strip()
-
-        if subject and issue:
-            return f"{subject}. {issue}"
-
-        return subject or issue
+        return f"{subject}. {issue}".strip(". ") if subject and issue else subject or issue
 
     @classmethod
-    def _tokenize(cls, text: str) -> set[str]:
-        """Normalize text into meaningful lexical tokens."""
-
-        if not text:
-            return set()
-
-        words = re.findall(
-            r"[a-zA-Z0-9]+",
-            text.lower(),
-        )
-
+    def _tokens(cls, text: str) -> set[str]:
         return {
-            word
-            for word in words
-            if len(word) > 1 and word not in cls.STOPWORDS
+            w for w in re.findall(r"[a-zA-Z0-9]+", text.lower())
+            if len(w) > 1 and w not in cls.STOPWORDS
         }
 
-    # ==================================================================
-    # Concept expansion
-    # ==================================================================
+    @classmethod
+    def _concepts(cls, text: str) -> set[str]:
+        text = re.sub(r"\s+", " ", text.lower())
+        found = set()
+        tokens = cls._tokens(text)
+        for phrase, concepts in cls.PHRASES.items():
+            if phrase in text:
+                found |= concepts
+        for name, terms in cls.CONCEPTS.items():
+            if tokens & terms:
+                found.add(name)
+        return found
 
     @classmethod
-    def _expand_concepts(cls, text: str) -> set[str]:
-        """Expand user language into support-domain concepts."""
-
-        normalized = re.sub(
-            r"\s+",
-            " ",
-            text.lower().strip(),
-        )
-
-        concepts: set[str] = set()
-
-        for phrase, phrase_concepts in cls.PHRASE_CONCEPTS.items():
-            if phrase in normalized:
-                concepts.update(phrase_concepts)
-
-        tokens = cls._tokenize(text)
-
-        for concept_name, concept_terms in cls.CONCEPT_GROUPS.items():
-            if tokens & concept_terms:
-                concepts.add(concept_name)
-
-        return concepts
+    def _phrases(cls, text: str) -> set[str]:
+        text = re.sub(r"\s+", " ", text.lower())
+        return {p for p in cls.PHRASES if p in text}
 
     @classmethod
-    def _text_concepts(cls, text: str) -> set[str]:
-        """Determine which support concepts are represented in text."""
-
-        return cls._expand_concepts(text)
-
-    @classmethod
-    def _matched_phrases(cls, text: str) -> set[str]:
-        """Return support phrases explicitly present in the query."""
-
-        normalized = re.sub(
-            r"\s+",
-            " ",
-            text.lower().strip(),
-        )
-
-        return {
-            phrase
-            for phrase in cls.PHRASE_CONCEPTS
-            if phrase in normalized
-        }
-
-    # ==================================================================
-    # Intent detection
-    # ==================================================================
+    def _intents(cls, text: str) -> set[str]:
+        normalized = re.sub(r"\s+", " ", text.lower())
+        concepts = cls._concepts(text)
+        found = set()
+        for name, (phrases, required, _, _) in cls.INTENTS.items():
+            if any(p in normalized for p in phrases) or (
+                required and len(concepts & required) / len(required) >= 0.67
+            ):
+                found.add(name)
+        if {"delete", "account"} <= concepts:
+            found.add("account_deletion")
+        if {"community", "account"} <= concepts:
+            found.add("community_account")
+        if {"google", "login"} <= concepts:
+            found.add("google_account")
+        if "time_accommodation" in concepts and "candidate" in concepts:
+            found.add("time_accommodation")
+        if "reinvite" in concepts and ({"candidate","invite"} & concepts):
+            found.add("candidate_reinvite")
+        return found
 
     @classmethod
-    def _detect_intents(cls, text: str) -> set[str]:
-        """
-        Detect high-level support intents.
-
-        Multiple intents may be active for a ticket.
-
-        Example:
-
-            "Give the candidate 50% extra time and reinvite them"
-
-        produces:
-
-            time_accommodation
-            candidate_reinvite
-        """
-
-        normalized = re.sub(
-            r"\s+",
-            " ",
-            text.lower().strip(),
-        )
-
-        tokens = cls._tokenize(text)
-        concepts = cls._expand_concepts(text)
-
-        intents: set[str] = set()
-
-        for intent_name, definition in cls.INTENT_PATTERNS.items():
-            phrases = definition.get("phrases", set())
-            required_concepts = definition.get("concepts", set())
-
-            phrase_match = any(
-                phrase in normalized
-                for phrase in phrases
-            )
-
-            concept_overlap = concepts & required_concepts
-
-            # A phrase match is strong enough by itself.
-            if phrase_match:
-                intents.add(intent_name)
-                continue
-
-            # Otherwise require most of the intent's concepts.
-            if required_concepts:
-                coverage = len(concept_overlap) / len(
-                    required_concepts
-                )
-
-                if coverage >= 0.67:
-                    intents.add(intent_name)
-
-        # Extra handling for combinations where individual tokens are
-        # important but no exact phrase exists.
-        if (
-            "delete" in concepts
-            and "account" in concepts
-        ):
-            intents.add("account_deletion")
-
-        if (
-            "community" in concepts
-            and "account" in concepts
-        ):
-            intents.add("community_account")
-
-        if (
-            "google" in concepts
-            and "login" in concepts
-        ):
-            intents.add("google_account")
-
-        if (
-            "time_accommodation" in concepts
-            and "candidate" in concepts
-        ):
-            intents.add("time_accommodation")
-
-        if (
-            "reinvite" in concepts
-            and (
-                "candidate" in concepts
-                or "invite" in concepts
-            )
-        ):
-            intents.add("candidate_reinvite")
-
-        return intents
-
-    # ==================================================================
-    # Lexical scoring
-    # ==================================================================
-
-    @classmethod
-    def _lexical_score(
-        cls,
-        query_tokens: set[str],
-        chunk: RetrievedChunk,
-    ) -> float:
-        """
-        Calculate lexical relevance.
-
-        Title and category matches are weighted more strongly than
-        ordinary body matches.
-        """
-
-        if not query_tokens:
+    def _lexical(cls, query: set[str], chunk: RetrievedChunk) -> float:
+        if not query:
             return 0.0
-
-        title_tokens = cls._tokenize(chunk.title)
-        category_tokens = cls._tokenize(chunk.category)
-        text_tokens = cls._tokenize(chunk.text)
-
-        title_overlap = query_tokens & title_tokens
-        category_overlap = query_tokens & category_tokens
-        text_overlap = query_tokens & text_tokens
-
-        weighted_overlap = (
-            3.0 * len(title_overlap)
-            + 1.5 * len(category_overlap)
-            + 1.0 * len(text_overlap)
-        )
-
-        max_score = 3.0 * len(query_tokens)
-
-        if max_score <= 0:
-            return 0.0
-
-        return min(
-            weighted_overlap / max_score,
-            1.0,
-        )
-
-    # ==================================================================
-    # Title scoring
-    # ==================================================================
+        title = cls._tokens(chunk.title)
+        category = cls._tokens(chunk.category)
+        body = cls._tokens(chunk.text)
+        score = 3 * len(query & title) + 1.5 * len(query & category) + len(query & body)
+        return min(score / (3 * len(query)), 1.0)
 
     @classmethod
-    def _title_score(
-        cls,
-        query_tokens: set[str],
-        title: str,
-    ) -> float:
-        """
-        Calculate title relevance.
-
-        Exact meaningful title terms receive stronger influence than
-        generic body-word overlap.
-        """
-
-        if not query_tokens or not title:
+    def _title(cls, query: set[str], title: str) -> float:
+        if not query or not title:
             return 0.0
-
-        title_tokens = cls._tokenize(title)
-
-        if not title_tokens:
-            return 0.0
-
-        overlap = query_tokens & title_tokens
-
-        token_score = len(overlap) / len(query_tokens)
-
-        normalized_title = re.sub(
-            r"\s+",
-            " ",
-            title.lower().strip(),
-        )
-
-        phrase_bonus = 0.0
-
-        for phrase in cls.PHRASE_CONCEPTS:
-            if phrase in normalized_title:
-                phrase_bonus = max(
-                    phrase_bonus,
-                    0.30,
-                )
-
-        return min(
-            token_score + phrase_bonus,
-            1.0,
-        )
-
-    # ==================================================================
-    # Concept scoring
-    # ==================================================================
+        overlap = len(query & cls._tokens(title)) / len(query)
+        title_l = title.lower()
+        phrase_bonus = 0.3 if any(p in title_l for p in cls.PHRASES) else 0
+        return min(overlap + phrase_bonus, 1.0)
 
     @classmethod
-    def _concept_score(
-        cls,
-        query_concepts: set[str],
-        chunk: RetrievedChunk,
-    ) -> float:
-        """
-        Calculate conceptual relevance.
-
-        Title concepts > category concepts > body concepts.
-        """
-
-        if not query_concepts:
+    def _concept(cls, query: set[str], chunk: RetrievedChunk) -> float:
+        if not query:
             return 0.0
-
-        title_concepts = cls._text_concepts(chunk.title)
-        category_concepts = cls._text_concepts(chunk.category)
-        text_concepts = cls._text_concepts(chunk.text)
-
-        matched_weight = 0.0
-
-        for concept in query_concepts:
-            if concept in title_concepts:
-                matched_weight += 3.0
-            elif concept in category_concepts:
-                matched_weight += 2.0
-            elif concept in text_concepts:
-                matched_weight += 1.0
-
-        max_weight = 3.0 * len(query_concepts)
-
-        if max_weight <= 0:
-            return 0.0
-
-        return min(
-            matched_weight / max_weight,
-            1.0,
-        )
-
-    # ==================================================================
-    # Phrase scoring
-    # ==================================================================
+        title = cls._concepts(chunk.title)
+        category = cls._concepts(chunk.category)
+        body = cls._concepts(chunk.text)
+        matched = sum(3 if c in title else 2 if c in category else 1 if c in body else 0 for c in query)
+        return min(matched / (3 * len(query)), 1.0)
 
     @classmethod
-    def _phrase_score(
-        cls,
-        query_phrases: set[str],
-        chunk: RetrievedChunk,
-    ) -> float:
-        """
-        Score exact support phrases.
-
-        Exact phrases are particularly valuable for support documentation
-        because terminology often maps directly to article titles.
-        """
-
-        if not query_phrases:
+    def _phrase(cls, phrases: set[str], chunk: RetrievedChunk) -> float:
+        if not phrases:
             return 0.0
-
-        title = re.sub(
-            r"\s+",
-            " ",
-            chunk.title.lower().strip(),
-        )
-
-        category = re.sub(
-            r"\s+",
-            " ",
-            chunk.category.lower().strip(),
-        )
-
-        text = re.sub(
-            r"\s+",
-            " ",
-            chunk.text.lower().strip(),
-        )
-
-        score = 0.0
-
-        for phrase in query_phrases:
-            if phrase in title:
-                score += 1.0
-            elif phrase in category:
-                score += 0.60
-            elif phrase in text:
-                score += 0.30
-
-        return min(
-            score / len(query_phrases),
-            1.0,
-        )
-
-    # ==================================================================
-    # Intent scoring
-    # ==================================================================
+        title, category, body = chunk.title.lower(), chunk.category.lower(), chunk.text.lower()
+        score = sum(1 if p in title else 0.6 if p in category else 0.3 if p in body else 0 for p in phrases)
+        return min(score / len(phrases), 1.0)
 
     @classmethod
-    def _intent_score(
-        cls,
-        query_intents: set[str],
-        chunk: RetrievedChunk,
-    ) -> float:
-        """
-        Score whether a document actually matches the user's intent.
-
-        This is the most important distinction from generic semantic
-        similarity.
-
-        For example:
-
-            User: "How long do tests stay active?"
-
-        should strongly prefer:
-
-            "Modify Test Expiration Time"
-
-        over:
-
-            "Invite Candidates to a Test"
-
-        even though both documents contain expiration/invitation concepts.
-        """
-
-        if not query_intents:
+    def _intent(cls, intents: set[str], chunk: RetrievedChunk) -> float:
+        if not intents:
             return 0.0
-
-        normalized_title = re.sub(
-            r"\s+",
-            " ",
-            chunk.title.lower().strip(),
-        )
-
-        normalized_category = re.sub(
-            r"\s+",
-            " ",
-            chunk.category.lower().strip(),
-        )
-
-        document_text = (
-            f"{normalized_title} "
-            f"{normalized_category} "
-            f"{chunk.text.lower()}"
-        )
-
-        total_score = 0.0
-        matched_intents = 0
-
-        for intent_name in query_intents:
-            definition = cls.INTENT_PATTERNS.get(intent_name)
-
+        title_tokens = cls._tokens(chunk.title)
+        doc = f"{chunk.title.lower()} {chunk.category.lower()} {chunk.text.lower()}"
+        scores = []
+        for name in intents:
+            definition = cls.INTENTS.get(name)
             if not definition:
                 continue
-
-            preferred_terms = definition.get(
-                "preferred_title_terms",
-                set(),
-            )
-
-            avoid_terms = definition.get(
-                "avoid_title_terms",
-                set(),
-            )
-
-            required_concepts = definition.get(
-                "concepts",
-                set(),
-            )
-
-            title_tokens = cls._tokenize(chunk.title)
-            category_tokens = cls._tokenize(chunk.category)
-            document_concepts = cls._text_concepts(
-                document_text
-            )
-
-            intent_score = 0.0
-
-            # ----------------------------------------------------------
-            # Preferred title terms
-            # ----------------------------------------------------------
-
-            preferred_overlap = (
-                preferred_terms & title_tokens
-            )
-
-            if preferred_terms:
-                preferred_ratio = (
-                    len(preferred_overlap)
-                    / len(preferred_terms)
-                )
-
-                intent_score += 0.50 * preferred_ratio
-
-            # ----------------------------------------------------------
-            # Concept coverage
-            # ----------------------------------------------------------
-
-            if required_concepts:
-                concept_overlap = (
-                    required_concepts
-                    & document_concepts
-                )
-
-                concept_ratio = (
-                    len(concept_overlap)
-                    / len(required_concepts)
-                )
-
-                intent_score += 0.35 * concept_ratio
-
-            # ----------------------------------------------------------
-            # Explicit phrase in document
-            # ----------------------------------------------------------
-
-            for phrase in definition.get("phrases", set()):
-                if phrase in document_text:
-                    intent_score += 0.20
-                    break
-
-            # ----------------------------------------------------------
-            # Penalize competing object in the title.
-            #
-            # This is particularly useful for:
-            #
-            #   test expiration
-            #
-            # versus:
-            #
-            #   invitation expiration
-            # ----------------------------------------------------------
-
-            if avoid_terms:
-                if avoid_terms & title_tokens:
-                    intent_score -= 0.30
-
-            intent_score = max(
-                0.0,
-                min(intent_score, 1.0),
-            )
-
-            if intent_score > 0:
-                matched_intents += 1
-                total_score += intent_score
-
-        if matched_intents == 0:
-            return 0.0
-
-        return min(
-            total_score / len(query_intents),
-            1.0,
-        )
-
-    # ==================================================================
-    # Source normalization
-    # ==================================================================
+            phrases, concepts, preferred, avoid = definition
+            score = 0.5 * (len(title_tokens & preferred) / len(preferred) if preferred else 0)
+            score += 0.35 * (len(cls._concepts(doc) & concepts) / len(concepts) if concepts else 0)
+            score += 0.2 if any(p in doc for p in phrases) else 0
+            if avoid & title_tokens:
+                score -= 0.3
+            scores.append(max(0.0, min(score, 1.0)))
+        return min(sum(scores) / len(intents), 1.0) if scores else 0.0
 
     @staticmethod
-    def _source_key(source_path: str) -> str:
-        """
-        Normalize source paths for article-level deduplication.
-
-        Multiple chunks from one article should not consume multiple
-        final retrieval slots.
-        """
-
-        if not source_path:
-            return ""
-
-        return source_path.strip().lower()
-
-    # ==================================================================
-    # Utility
-    # ==================================================================
-
-    @staticmethod
-    def _safe_float(value: object) -> float:
-        """Convert a similarity value into a safe float."""
-
+    def _float(value) -> float:
         try:
             return float(value)
         except (TypeError, ValueError):

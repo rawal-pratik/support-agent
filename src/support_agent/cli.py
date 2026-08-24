@@ -1,523 +1,153 @@
-"""Terminal CLI for the support triage agent."""
+"""Typer CLI for ingestion, search, triage, and evaluation."""
 
 from pathlib import Path
 from typing import Optional
 
 from dotenv import load_dotenv
 import typer
-from typer import Context
 
-from .models import AgentResult, Ticket
-from .orchestrator import TriageOrchestrator
-from .retrieval import Retriever, SemanticRetriever
 from .csv_io import read_tickets, write_results
-from .ingestion import ingest_corpus, IngestionResult
-from .embeddings import EmbeddingProvider, GeminiEmbeddingProvider
 from .db import DocumentChunkRepository
-from .llm import LLMProvider, OpenRouterProvider
-from .evaluation import run_evaluation, format_report
-
+from .embeddings import GeminiEmbeddingProvider
+from .evaluation import format_report, run_evaluation
+from .ingestion import ingest_corpus
+from .llm import OpenRouterProvider
+from .models import Ticket
+from .orchestrator import TriageOrchestrator
+from .retrieval import SemanticRetriever
 
 load_dotenv()
+app = typer.Typer(name="support-agent", help="Support triage agent CLI", no_args_is_help=True, add_completion=False)
 
 
-app = typer.Typer(
-    name="support-agent",
-    help="Support triage agent CLI",
-    no_args_is_help=True,
-    add_completion=False,
-)
-
-
-# ---------------------------------------------------------------------------
-# Service factories
-# ---------------------------------------------------------------------------
-
-
-def _get_embedding_provider() -> EmbeddingProvider:
-    """Get embedding provider from environment."""
-    return GeminiEmbeddingProvider.from_env()
-
-
-def _get_repository() -> DocumentChunkRepository:
-    """Get Supabase repository from environment."""
-    return DocumentChunkRepository.from_env()
-
-
-def _get_llm_provider() -> LLMProvider:
-    """Get LLM provider from environment."""
-    return OpenRouterProvider.from_env()
-
-
-# ---------------------------------------------------------------------------
-# Ingestion
-# ---------------------------------------------------------------------------
-
-
-@app.command()
-def ingest(
-    ctx: Context,
-    index_path: Path = typer.Option(
-        "public/corpus/index.md",
-        "--index-path",
-        "-i",
-        help="Path to corpus index.md file",
-        exists=True,
-        file_okay=True,
-        dir_okay=False,
-        readable=True,
-    ),
-    chunk_size: int = typer.Option(
-        400,
-        "--chunk-size",
-        help="Number of words per chunk",
-    ),
-    overlap: int = typer.Option(
-        50,
-        "--overlap",
-        help="Number of overlapping words between chunks",
-    ),
-    max_chunks: Optional[int] = typer.Option(
-        None,
-        "--max-chunks",
-        help="Maximum number of chunks to process.",
-    ),
-    clear: bool = typer.Option(
-        True,
-        "--clear/--no-clear",
-        help="Clear existing chunks before ingestion",
-    ),
-) -> None:
-    """
-    Load, chunk, embed, and store the documentation corpus in Supabase.
-    """
-    try:
-        embedding_provider = _get_embedding_provider()
-        repository = _get_repository()
-
-        result: IngestionResult = ingest_corpus(
-            index_path=index_path,
-            repository=repository,
-            embedding_provider=embedding_provider,
-            chunk_size=chunk_size,
-            overlap=overlap,
-            clear_existing=clear,
-            max_chunks=max_chunks,
-        )
-
-        typer.echo(f"Documents processed: {result.document_count}")
-        typer.echo(f"Chunks created: {result.chunk_count}")
-        typer.echo(f"Chunks inserted: {result.inserted_count}")
-        typer.echo(f"Chunks skipped: {result.skipped_count}")
-
-    except ValueError as e:
-        typer.echo(f"Configuration error: {e}", err=True)
-        raise typer.Exit(code=1)
-
-    except Exception as e:
-        typer.echo(f"Ingestion failed: {e}", err=True)
-        raise typer.Exit(code=1)
-
-
-# ---------------------------------------------------------------------------
-# Search
-# ---------------------------------------------------------------------------
-
-
-@app.command()
-def search(
-    ctx: Context,
-    query: str = typer.Argument(
-        ...,
-        help="Search query text",
-    ),
-    top_k: int = typer.Option(
-        5,
-        "--top-k",
-        "-k",
-        help="Number of final results to return",
-        min=1,
-    ),
-    candidate_k: int = typer.Option(
-        20,
-        "--candidate-k",
-        help="Number of semantic candidates retrieved before reranking",
-        min=1,
-    ),
-    threshold: float = typer.Option(
-        0.0,
-        "--threshold",
-        "-t",
-        help="Minimum semantic similarity threshold",
-        min=0.0,
-        max=1.0,
-    ),
-) -> None:
-    """
-    Search the documentation corpus using hybrid retrieval.
-
-    The retriever first obtains candidate documents using semantic
-    similarity, then reranks them using semantic and lexical relevance.
-    """
-    if not query.strip():
-        typer.echo("Query cannot be empty", err=True)
-        raise typer.Exit(code=1)
-
+def _services(top_k=5, candidate_k=30, threshold=0.0):
     if candidate_k < top_k:
-        typer.echo(
-            "--candidate-k must be greater than or equal to --top-k",
-            err=True,
-        )
-        raise typer.Exit(code=1)
-
-    try:
-        embedding_provider = _get_embedding_provider()
-        repository = _get_repository()
-
-        retriever: Retriever = SemanticRetriever(
-            embedding_provider=embedding_provider,
-            repository=repository,
-            top_k=top_k,
-            candidate_k=candidate_k,
-            similarity_threshold=threshold,
-        )
-
-        # Create a dummy ticket for the query.
-        ticket = Ticket(
-            issue=query,
-            subject="",
-        )
-
-        chunks = retriever.retrieve(ticket)
-
-        if not chunks:
-            typer.echo("No results found")
-            return
-
-        for i, chunk in enumerate(chunks, 1):
-            typer.echo(f"\n--- Result {i} ---")
-            typer.echo(f"Chunk ID: {chunk.chunk_id}")
-            typer.echo(f"Source: {chunk.source_path}")
-            typer.echo(f"Title: {chunk.title}")
-            typer.echo(f"Category: {chunk.category}")
-            typer.echo(f"Similarity: {chunk.similarity:.4f}")
-            typer.echo(f"Text: {chunk.text[:500]}")
-
-            if len(chunk.text) > 500:
-                typer.echo("... (truncated)")
-
-    except ValueError as e:
-        typer.echo(f"Configuration error: {e}", err=True)
-        raise typer.Exit(code=1)
-
-    except Exception as e:
-        typer.echo(f"Search failed: {e}", err=True)
-        raise typer.Exit(code=1)
-
-
-# ---------------------------------------------------------------------------
-# Triage
-# ---------------------------------------------------------------------------
-
-
-@app.command()
-def triage(
-    ctx: Context,
-    input_csv: Path = typer.Argument(
-        ...,
-        help="Path to input CSV file with tickets",
-        exists=True,
-        file_okay=True,
-    ),
-    output_csv: Path = typer.Argument(
-        ...,
-        help="Path to output CSV file for results",
-    ),
-    min_chunks: int = typer.Option(
-        1,
-        "--min-chunks",
-        help="Minimum retrieved chunks required to call LLM",
-        min=1,
-    ),
-    top_k: int = typer.Option(
-        5,
-        "--top-k",
-        help="Number of final documentation chunks supplied to the LLM",
-        min=1,
-    ),
-    candidate_k: int = typer.Option(
-        20,
-        "--candidate-k",
-        help="Number of semantic candidates retrieved before reranking",
-        min=1,
-    ),
-    threshold: float = typer.Option(
-        0.0,
-        "--threshold",
-        help="Minimum semantic similarity threshold",
-        min=0.0,
-        max=1.0,
-    ),
-) -> None:
-    """
-    Process support tickets from CSV and write triage results.
-
-    Retrieval uses a broad semantic candidate pool followed by hybrid
-    semantic/lexical reranking before the final chunks are sent to the LLM.
-    """
-    if not input_csv.exists():
-        typer.echo(
-            f"Input file not found: {input_csv}",
-            err=True,
-        )
-        raise typer.Exit(code=1)
-
-    if candidate_k < top_k:
-        typer.echo(
-            "--candidate-k must be greater than or equal to --top-k",
-            err=True,
-        )
-        raise typer.Exit(code=1)
-
-    try:
-        tickets = read_tickets(input_csv)
-
-    except ValueError as e:
-        typer.echo(
-            f"Invalid input CSV: {e}",
-            err=True,
-        )
-        raise typer.Exit(code=1)
-
-    except Exception as e:
-        typer.echo(
-            f"Failed to read input CSV: {e}",
-            err=True,
-        )
-        raise typer.Exit(code=1)
-
-    if not tickets:
-        typer.echo(
-            "No tickets found in input CSV",
-            err=True,
-        )
-        raise typer.Exit(code=1)
-
-    try:
-        retriever: Retriever = SemanticRetriever(
-            embedding_provider=_get_embedding_provider(),
-            repository=_get_repository(),
-            top_k=top_k,
-            candidate_k=candidate_k,
-            similarity_threshold=threshold,
-        )
-
-        llm_provider: LLMProvider = _get_llm_provider()
-
-    except ValueError as e:
-        typer.echo(
-            f"Configuration error: {e}",
-            err=True,
-        )
-        raise typer.Exit(code=1)
-
-    except Exception as e:
-        typer.echo(
-            f"Failed to initialize services: {e}",
-            err=True,
-        )
-        raise typer.Exit(code=1)
-
-    orchestrator = TriageOrchestrator(
-        retriever=retriever,
-        llm_provider=llm_provider,
-        min_retrieved_chunks=min_chunks,
-    )
-
-    results: list[AgentResult] = []
-
-    for i, ticket in enumerate(tickets, 1):
-        try:
-            result = orchestrator.process_ticket(ticket)
-            results.append(result)
-
-        except Exception as e:
-            typer.echo(
-                f"Error processing ticket {i}: {e}",
-                err=True,
-            )
-            raise typer.Exit(code=1)
-
-    try:
-        write_results(
-            output_csv,
-            results,
-        )
-
-        # Summary statistics.
-        replied_count = sum(
-            1
-            for r in results
-            if r.status == "replied"
-        )
-
-        escalated_count = sum(
-            1
-            for r in results
-            if r.status == "escalated"
-        )
-
-        typer.echo(
-            f"Processed {len(tickets)} input tickets"
-        )
-        typer.echo(
-            f"Output: {len(results)} tickets written to {output_csv}"
-        )
-        typer.echo(
-            f"Replied: {replied_count}"
-        )
-        typer.echo(
-            f"Escalated: {escalated_count}"
-        )
-
-    except Exception as e:
-        typer.echo(
-            f"Failed to write output CSV: {e}",
-            err=True,
-        )
-        raise typer.Exit(code=1)
-
-
-# ---------------------------------------------------------------------------
-# Evaluation
-# ---------------------------------------------------------------------------
-
-
-@app.command()
-def evaluate(
-    ctx: Context,
-    golden_csv: Optional[Path] = typer.Option(
-        None,
-        "--golden",
-        "-g",
-        help="Path to golden/evaluation CSV",
-    ),
-    top_k: int = typer.Option(
-        5,
-        "--top-k",
-        help="Number of final documentation chunks supplied to the LLM",
-        min=1,
-    ),
-    candidate_k: int = typer.Option(
-        20,
-        "--candidate-k",
-        help="Number of semantic candidates retrieved before reranking",
-        min=1,
-    ),
-    threshold: float = typer.Option(
-        0.0,
-        "--threshold",
-        help="Minimum semantic similarity threshold",
-        min=0.0,
-        max=1.0,
-    ),
-) -> None:
-    """
-    Evaluate triage results against golden sample data.
-    """
-    if golden_csv is None:
-        typer.echo(
-            "Error: --golden path to sample CSV is required",
-            err=True,
-        )
-        raise typer.Exit(code=1)
-
-    if not golden_csv.exists():
-        typer.echo(
-            f"Error: golden CSV not found: {golden_csv}",
-            err=True,
-        )
-        raise typer.Exit(code=1)
-
-    if candidate_k < top_k:
-        typer.echo(
-            "--candidate-k must be greater than or equal to --top-k",
-            err=True,
-        )
-        raise typer.Exit(code=1)
-
-    try:
-        retriever = SemanticRetriever(
+        raise ValueError("candidate_k must be greater than or equal to top_k")
+    return (
+        SemanticRetriever(
             embedding_provider=GeminiEmbeddingProvider.from_env(),
             repository=DocumentChunkRepository.from_env(),
             top_k=top_k,
             candidate_k=candidate_k,
             similarity_threshold=threshold,
+        ),
+        OpenRouterProvider.from_env(),
+    )
+
+
+@app.command()
+def ingest(
+    index_path: Path = typer.Option("public/corpus/index.md", "--index-path", "-i", exists=True),
+    chunk_size: int = typer.Option(400, "--chunk-size", min=1),
+    overlap: int = typer.Option(50, "--overlap", min=0),
+    max_chunks: Optional[int] = typer.Option(None, "--max-chunks"),
+    clear: bool = typer.Option(True, "--clear/--no-clear"),
+):
+    try:
+        result = ingest_corpus(
+            index_path=index_path,
+            repository=DocumentChunkRepository.from_env(),
+            embedding_provider=GeminiEmbeddingProvider.from_env(),
+            chunk_size=chunk_size,
+            overlap=overlap,
+            clear_existing=clear,
+            max_chunks=max_chunks,
         )
+        typer.echo(f"Documents processed: {result.document_count}")
+        typer.echo(f"Chunks created: {result.chunk_count}")
+        typer.echo(f"Chunks inserted: {result.inserted_count}")
+        typer.echo(f"Chunks skipped: {result.skipped_count}")
+    except Exception as exc:
+        typer.echo(f"Ingestion failed: {exc}", err=True)
+        raise typer.Exit(1)
 
-        llm_provider = OpenRouterProvider.from_env()
 
-        orchestrator = TriageOrchestrator(
-            retriever=retriever,
-            llm_provider=llm_provider,
-            min_retrieved_chunks=1,
+@app.command()
+def search(
+    query: str = typer.Argument(...),
+    top_k: int = typer.Option(5, "--top-k", "-k", min=1),
+    candidate_k: int = typer.Option(30, "--candidate-k", min=1),
+    threshold: float = typer.Option(0.0, "--threshold", "-t", min=0.0, max=1.0),
+):
+    if not query.strip():
+        raise typer.BadParameter("query cannot be empty")
+    try:
+        retriever = SemanticRetriever(
+            GeminiEmbeddingProvider.from_env(),
+            DocumentChunkRepository.from_env(),
+            top_k=top_k,
+            candidate_k=candidate_k,
+            similarity_threshold=threshold,
         )
-
-        report = run_evaluation(
-            golden_csv,
-            orchestrator,
-        )
-
-        formatted = format_report(report)
-        typer.echo(formatted)
-
-    except ValueError as e:
-        typer.echo(
-            f"Configuration error: {e}",
-            err=True,
-        )
-        raise typer.Exit(code=1)
-
-    except Exception as e:
-        typer.echo(
-            f"Evaluation failed: {e}",
-            err=True,
-        )
-        raise typer.Exit(code=1)
+        chunks = retriever.retrieve(Ticket(subject="", issue=query))
+        if not chunks:
+            typer.echo("No results found")
+            return
+        for i, c in enumerate(chunks, 1):
+            typer.echo(
+                f"\n--- Result {i} ---\n"
+                f"Chunk ID: {c.chunk_id}\n"
+                f"Source: {c.source_path}\n"
+                f"Title: {c.title}\n"
+                f"Category: {c.category}\n"
+                f"Similarity: {c.similarity:.4f}\n"
+                f"Text: {c.text[:500]}{'...' if len(c.text) > 500 else ''}"
+            )
+    except Exception as exc:
+        typer.echo(f"Search failed: {exc}", err=True)
+        raise typer.Exit(1)
 
 
-# ---------------------------------------------------------------------------
-# Version
-# ---------------------------------------------------------------------------
+@app.command()
+def triage(
+    input_csv: Path = typer.Argument(..., exists=True),
+    output_csv: Path = typer.Argument(...),
+    min_chunks: int = typer.Option(1, "--min-chunks", min=1),
+    top_k: int = typer.Option(5, "--top-k", min=1),
+    candidate_k: int = typer.Option(30, "--candidate-k", min=1),
+    threshold: float = typer.Option(0.0, "--threshold", min=0.0, max=1.0),
+):
+    if candidate_k < top_k:
+        raise typer.BadParameter("candidate_k must be greater than or equal to top_k")
+
+    try:
+        tickets = read_tickets(input_csv)
+        retriever, llm = _services(top_k, candidate_k, threshold)
+        agent = TriageOrchestrator(retriever, llm, min_chunks)
+        results = [agent.process_ticket(ticket) for ticket in tickets]
+        write_results(output_csv, results)
+
+        replied = sum(r.status == "replied" for r in results)
+        typer.echo(f"Processed {len(results)} input tickets")
+        typer.echo(f"Output: {len(results)} tickets written to {output_csv}")
+        typer.echo(f"Replied: {replied}")
+        typer.echo(f"Escalated: {len(results) - replied}")
+    except Exception as exc:
+        typer.echo(f"Triage failed: {exc}", err=True)
+        raise typer.Exit(1)
 
 
-def _version_callback(value: bool) -> None:
-    if value:
-        typer.echo("support-agent 0.1.0")
-        raise typer.Exit()
-
-
-# ---------------------------------------------------------------------------
-# Application callback
-# ---------------------------------------------------------------------------
+@app.command()
+def evaluate(
+    golden_csv: Path = typer.Option(..., "--golden", "-g", exists=True),
+    top_k: int = typer.Option(5, "--top-k", min=1),
+    candidate_k: int = typer.Option(30, "--candidate-k", min=1),
+    threshold: float = typer.Option(0.0, "--threshold", min=0.0, max=1.0),
+):
+    try:
+        retriever, llm = _services(top_k, candidate_k, threshold)
+        report = run_evaluation(golden_csv, TriageOrchestrator(retriever, llm))
+        typer.echo(format_report(report))
+    except Exception as exc:
+        typer.echo(f"Evaluation failed: {exc}", err=True)
+        raise typer.Exit(1)
 
 
 @app.callback()
-def main(
-    ctx: Context,
-    version: bool = typer.Option(
-        False,
-        "--version",
-        "-v",
-        callback=_version_callback,
-        is_eager=True,
-        help="Show version",
-    ),
-) -> None:
-    """
-    Support triage agent — terminal CLI for processing support tickets.
-    """
-    pass
+def main(version: bool = typer.Option(False, "--version", "-v")):
+    if version:
+        typer.echo("support-agent 0.1.0")
+        raise typer.Exit()
 
 
 if __name__ == "__main__":

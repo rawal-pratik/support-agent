@@ -1,64 +1,49 @@
 status,product_area,response,justification,request_type
-replied,Screen / Managing Tests,"Tests in HackerRank remain active indefinitely by default. There are two separate expiration controls:
+replied,Screen / Managing Tests,"By default, tests do not expire — the Test Expiration Time fields are empty unless you explicitly set a start and end date/time. If you configure a Test Expiration Time (in Settings > General), the test is only active during that window: candidates can attempt it only between the start and end times, the Invite button becomes disabled after the end time, and you cannot invite new candidates. If no expiration is set, the test remains active indefinitely. Separately, each test invite can have its own Invite Expiry (duration or fixed end date), which is disabled by default.","Document 1 states that Test Expiration Time fields are empty by default and that candidates can attempt the test only during the active period; after expiration, invited candidates cannot access the test and the Invite button is disabled. Document 5 confirms the same setting under General settings. Document 2 describes Invite Expiry as a separate, optional setting that is disabled by default.",product_issue
+escalated,unknown,Your request has been escalated for human review. Reason: high-risk content detected.,Ticket automatically escalated per policy: high_risk. Policy decision: bug (risk: high).,bug
+replied,Screen / Managing Tests,"Based on HackerRank documentation, test variants and separate tests serve different purposes:
 
-1. **Test Expiration Time** (Document 1): You can set a start and end date/time for the test itself in Settings > General. By default these fields are empty, meaning the test has no expiration and stays active until you archive it or set an end date. After the test expires, candidates cannot access it, the Invite button is disabled, and you cannot invite new candidates.
+**When to use test variants** (Document 1, 3, 5):
+- Use variants when you want a single assessment that adapts to different candidate profiles (roles, skills, or other criteria).
+- Variants let you personalize evaluation within one test, eliminating the need to manage separate tests, improving efficiency, and reducing maintenance overhead while providing flexibility at scale.
+- Variant logic can route candidates to different variants based on their answers to a qualifying question (Document 5).
+- A variant-based test requires at least two variants (Document 1).
 
-2. **Invitation Expiry** (Documents 2 and 3): When you invite candidates, you can set how long each invitation remains valid. The default is **""Never""** (invitations do not expire). You can also choose a custom expiry date or duration. Reminder emails can be scheduled for candidates who haven't started.
+**When to create a new test** (Document 2):
+- Create a new test (custom test) when you need a highly tailored assessment for specific hiring needs—for example, a particular role, skill level, or experience (e.g., a Quality Assurance Engineer with five years of experience and expertise in test automation).
+- Predefined role-based tests (like Front End Developer for React, Angular, Vue.js) are created as separate tests from the role list.
 
-If candidates were assigned in October 2025 and have not received new tests, check whether:
-- The test itself has an End date that has passed (Settings > General > Test Expiration Time)
-- The original invitations had an expiry date set that has passed
-- The test was archived (Document 4), which removes it from the Active Tests tab and disables new invites
+**Advantages of variants** (Document 1, 3):
+- Single assessment to manage instead of multiple separate tests.
+- Improves efficiency and reduces maintenance overhead.
+- Ensures candidates are assessed on the most relevant content for their profile.
+- Flexibility to personalize assessments at scale.
+- Can reuse sections across variants via ""Add from Other Variants"" (Document 1).
 
-To invite those candidates again, you can reinvite them at any time (Document 1 notes you don't need to delete the previous invite).","Document 1 explains test-level expiration (default: no expiration). Documents 2 and 3 explain invitation-level expiration (default: never expires). Document 4 explains archiving, which also disables invites. Together these cover the user's question about how long tests stay active and why October 2025 assignees might not have active access.",product_issue
-escalated,unknown,Your request has been escalated for human review. Reason: high-risk content detected.,Ticket automatically escalated per policy: EscalationReason.HIGH_RISK. Policy decision: bug (risk: high).,bug
-replied,Screen / Managing Tests,"Based on HackerRank's documentation, here's guidance on when to use test variants versus separate tests:
+**Disadvantages / considerations** (inferred from documentation):
+- Variants require at least two variants and setup of variant logic.
+- May add complexity if the assessment differences are minor or if you need completely distinct tests.
+- Time adjustments for candidates can only be applied in bulk when all selected candidates belong to the same variant (Document 5).","Document 1 explains test variants allow a single assessment adapting to different candidate profiles, eliminating separate test management and improving efficiency. Document 2 describes creating custom tests for highly tailored assessments. Document 3 notes variants reduce maintenance overhead while enabling personalization at scale. Document 5 adds that variant logic routes candidates based on qualifying questions and that bulk time adjustments require candidates to be in the same variant.",product_issue
+replied,Screen / Managing Tests,"To give the candidate 50% extra time (≈53 minutes on a 105-minute test) and have the updated duration appear in the reinvitation email, you must first apply a **Time Accommodation** (percentage-based) and then reinvite the candidate. The ""Add Time"" feature (minutes-based) is for adding time during or after a test session and does not update the invitation email.
 
-**Test Variants (Document 1, Document 5)**
-- **Purpose**: Create a single assessment that adapts to different candidate profiles by personalizing evaluation based on roles, skills, or other criteria.
-- **Key advantages documented**:
-  - Eliminates the need to manage separate tests
-  - Improves efficiency
-  - Reduces maintenance overhead while providing flexibility to personalize assessments at scale
-  - Ensures candidates are assessed on the most relevant content
-  - Allows reusing sections across variants (""Add from Other Variants"")
-- **Requirement**: A variant-based test requires at least two variants.
+**Step-by-step:**
 
-**Separate Tests (Document 2)**
-- **Purpose**: Create distinct assessments for specific hiring needs.
-- **Predefined roles**: HackerRank provides role-based templates (e.g., ""Frontend Developer (React)"", ""Senior Frontend Developer (React)"") that auto-generate skills and questions.
-- **Custom tests**: Built from scratch for highly tailored assessments (e.g., a QA Engineer with 5 years' experience in test automation).
+1. **Apply Time Accommodation (50%)**
+   - Log in to HackerRank for Work.
+   - Go to the **Tests** tab and open the relevant test.
+   - Go to the **Candidates** tab.
+   - Select the checkbox next to the candidate.
+   - Click **More > Add Time Accommodation**.
+   - Enter **50** (percentage, in multiples of five).
+   - Click **Save**. A success message appears. The updated duration (157.5 minutes) will now show in the test invite email and on the test landing page.
 
-**When to choose each approach (synthesized from documented behavior)**:
-- **Use variants** when you have a core assessment that needs minor-to-moderate customization for different candidate profiles (e.g., same role but different tech stacks like React/Angular/Vue, or different seniority levels). Variants keep everything under one test for easier management.
-- **Use separate tests** when the assessments are fundamentally different in structure, purpose, or target role (e.g., Frontend vs Backend vs QA), or when you need completely independent test settings, invite templates, or reporting.
+2. **Reinvite the Candidate**
+   - With the candidate still selected (or re-select), click **Invite selected**.
+   - In the **Send Test Invites** section, click **Send invite**.
+   - A confirmation appears noting the candidate has already attempted; click **Re-invite**.
+   - Click **Send invite** to complete the reinvitation.
 
-The documentation doesn't provide an explicit ""best practice"" decision matrix, but the documented benefits of variants center on consolidation, reduced maintenance, and personalized content within a single test.","Document 1 describes test variants' purpose, creation process, and stated benefits (eliminates separate tests, improves efficiency, ensures relevant content). Document 5 confirms variants reduce maintenance overhead while enabling personalization at scale. Document 2 explains creating separate tests via predefined roles (which matches the user's observation of multiple default role versions) and custom tests for highly tailored needs. Together, these documents support the synthesized comparison.",product_issue
-replied,Screen / Managing Tests and Invite Candidates,"To give the candidate 50% extra time (≈53 minutes on a 105-minute test) and then reinvite them, you need to apply a **time accommodation** first, then send a new invitation. The accommodation is percentage-based, not a fixed minute entry.
-
-**Step 1 – Add 50% time accommodation**
-1. Log in to HackerRank for Work.
-2. Go to the **Tests** tab and open the relevant test.
-3. Open the **Candidates** tab.
-4. Check the box next to the candidate.
-5. Click **More > Add Time Accommodation**.
-6. Enter **50** (percentages must be multiples of five).
-7. Click **Save**.
-
-**Step 2 – Reinvite the candidate**
-1. With the same candidate still selected in the **Candidates** tab, click **Invite selected**.
-2. In the **Send Test Invites** dialog, click **Send invite**.
-3. A confirmation will appear noting the candidate has already attempted the test.
-4. Click **Re-invite**.
-5. Click **Send invite** to complete the reinvitation.
-
-**What the candidate sees**
-After the accommodation is saved, the updated duration (105 minutes + 50% = 157.5 minutes) will appear in the new invitation email and on the test landing page before the candidate starts the test (Document 1). The previous 105-minute reference in the old email is irrelevant because the reinvitation sends a fresh email with the accommodated time.
-
-**Important notes**
-- You must have a Recruiter license to reinvite candidates (Document 4).
-- The candidate’s previous report is automatically deleted when you reinvite; contact support@hackerrank.com if you need it recovered (Document 4).
-- If the test contains DevOps questions, do not add time after submission; instead, reinvite for a new attempt (Document 1).",Document 1 provides the procedure for adding time accommodation (percentage-based) and states the updated duration appears in the invite email and landing page. Document 4 provides the step-by-step reinvitation procedure. Together they cover the user's core request of adding 50% extra time and reinviting.,product_issue
-escalated,Account Management / Community Platform,"I'm unable to find documentation on deleting a personal HackerRank Community account that was created via Google login. The retrieved documentation only covers account management for HackerRank for Work (Enterprise) — such as deleting teams, tests, and test submissions — and SSO configuration for Google Workspace. Since your request involves a community/individual account, this falls outside the scope of the available documentation. I'm escalating this to a support agent who can assist with account deletion for HackerRank Community.","None of the retrieved documents (1-5) address deleting a personal HackerRank Community account. Document 1 covers Google Workspace SSO login for Enterprise plans. Documents 2-4 cover deleting teams, tests, and test submissions within HackerRank for Work. Document 5 covers security best practices for Enterprise accounts. The user's request pertains to a community account created via Google login, which is not covered.",product_issue
+The candidate will receive a new invitation email showing the accommodated duration (≈158 minutes). If the candidate has already started the test, they must refresh the page to see the updated timer.","Document 1 explains that Time Accommodation (percentage) updates the duration in the invite email and landing page, while Add Time (minutes) is for in-session adjustments and does not update the email. Document 2 provides the reinvitation procedure. Combining both gives the correct workflow.",product_issue
+escalated,Settings / Company Level Admin Settings,"I need to escalate your account deletion request. The available documentation does not contain instructions for permanently deleting a user account, especially for accounts created via Google login on HackerRank Community. This requires specialized support.","Document 1 covers Google Workspace login for HackerRank for Work but does not address account deletion. Document 3 mentions 'Close Your Account After Use' in the context of logging out for security, not permanent account deletion. Documents 4 and 5 describe deleting teams and tests, not user accounts. No supplied document provides a procedure for user account deletion.",product_issue
 replied,conversation_management,"I'm sorry, but this request is outside the scope of HackerRank support.",The request was classified by the deterministic policy layer as invalid or outside the supported HackerRank support scope.,invalid
 replied,conversation_management,You're welcome! Happy to help.,The ticket contains only a conversational acknowledgement and does not contain an actionable support request.,invalid
