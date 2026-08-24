@@ -1,15 +1,12 @@
-create extension if not exists vector;
+-- Adds the article source URL to document_chunks.
 
-create table if not exists public.document_chunks (
-    id text primary key,
-    source_path text not null,
-    title text not null,
-    category text not null default '',
-    chunk_text text not null,
-    embedding vector(1536)
-);
+alter table public.document_chunks
+    add column if not exists url text not null default '';
 
-create or replace function public.match_document_chunks(
+-- The return type changed because url was added.
+drop function if exists public.match_document_chunks(vector, integer);
+
+create function public.match_document_chunks(
     query_embedding vector(1536),
     match_count integer default 5
 )
@@ -18,6 +15,7 @@ returns table (
     source_path text,
     title text,
     category text,
+    url text,
     chunk_text text,
     similarity real
 )
@@ -29,6 +27,7 @@ as $$
         document_chunks.source_path,
         document_chunks.title,
         document_chunks.category,
+        document_chunks.url,
         document_chunks.chunk_text,
         1 - (document_chunks.embedding <=> query_embedding) as similarity
     from public.document_chunks

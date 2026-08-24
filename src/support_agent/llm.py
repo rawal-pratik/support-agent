@@ -126,6 +126,26 @@ class OpenRouterProvider:
             raise ValueError("LLM returned an empty response")
         return content
 
+    # Articles follow a "<numeric-id>-slug" naming convention in both their
+    # URL and their source filename (see corpus.py's frontmatter/filename
+    # handling). We extract that id here, in code, and hand the model the
+    # exact label to use — safer than asking the model to transcribe a long
+    # digit string out of a URL itself, which it will occasionally get
+    # wrong. Matched as a leftmost, un-anchored search (not "ends the
+    # string") because some article slugs contain literal, un-encoded
+    # slashes carried over from the article title (e.g. an "HTML/CSS/
+    # JavaScript" title), which would otherwise push the id out of an
+    # end-anchored match.
+    ARTICLE_NUMBER_PATTERN = re.compile(r"/(\d{4,})-")
+    ARTICLE_FILENAME_PATTERN = re.compile(r"(?:^|/)(\d{4,})-[^/]+\.md$")
+
+    @classmethod
+    def _citation_label(cls, chunk: RetrievedChunk, index: int) -> str:
+        match = cls.ARTICLE_NUMBER_PATTERN.search(chunk.url) if chunk.url else None
+        if not match and chunk.source_path:
+            match = cls.ARTICLE_FILENAME_PATTERN.search(chunk.source_path)
+        return f"Article {match.group(1)}" if match else f"Document {index}"
+
     @staticmethod
     def _system_prompt() -> str:
         return """You are a HackerRank support triage agent.
@@ -159,10 +179,11 @@ every document actually cited above (each URL used once, even if cited
 multiple times). Omit the "Source(s)" line entirely if none of the
 documents you relied on has a URL.
 
-Keep "justification" to short paraphrases with document numbers (Document 1,
-Document 2, ...), not long quotes — this field is for internal review, so
-the numbered labels are fine here even though they're banned from
-"response".
+Keep "justification" to short paraphrases citing sources by the exact
+"Citation label" given for each document below (e.g. "Article 7263906600"),
+not long quotes. Use the label verbatim — do not renumber, reformat, or
+invent one. If a document's label is "Document N" (no article number was
+determinable for it), use that label as given.
 
 Return ONLY one valid JSON object with exactly:
 status, product_area, response, justification, request_type
@@ -181,6 +202,8 @@ No markdown fences, no commentary, no extra text."""
         for i, c in enumerate(chunks, 1):
             docs.append(
                 f"DOCUMENT {i}\n"
+                f"Citation label (use this exact text in justification): "
+                f"{OpenRouterProvider._citation_label(c, i)}\n"
                 f"Source: {c.source_path}\n"
                 f"URL: {c.url or '(no URL available for this document)'}\n"
                 f"Title: {c.title}\n"
@@ -196,7 +219,7 @@ No markdown fences, no commentary, no extra text."""
                 "Answer grounded in documents, with no Document N labels.\n"
                 "Source(s): https://support.hackerrank.com/articles/example"
             ),
-            "justification": "Document 1 ...",
+            "justification": "Article 7263906600 ...",
             "request_type": policy.request_type.value,
         }
         return (
