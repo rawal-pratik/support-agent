@@ -1,0 +1,22 @@
+status,product_area,response,justification,request_type
+replied,screen,"By default, tests do not expire — the Test Expiration Time fields are empty unless you set a start and end date/time (Document 1). Similarly, test invites do not expire by default; the Invite Expiry setting is disabled unless you enable it and choose a duration or fixed end date (Document 2). If candidates assigned in October 2025 have not received new tests, check whether an Invite Expiry or Test Expiration Time was configured on those tests.","Document 1 states Test Expiration Time fields are empty by default, meaning tests stay active until an end date is set. Document 2 states Invite Expiry is disabled by default, so invites remain valid unless a time period or end date is configured.",product_issue
+escalated,unknown,Your request has been escalated for human review. Reason: high-risk content detected.,Ticket automatically escalated per policy: high_risk. Policy decision: bug (risk: high).,bug
+replied,screen,"Use test variants when you want a single assessment that adapts to different candidate profiles (e.g., same role with different tech stacks like React, Angular, Vue.js). Variants eliminate managing separate tests, improve efficiency, reduce maintenance overhead, and let you reuse sections across variants via ""Add from Other Variants"" or edit common sections in the ""All Sections"" view. Create a new test when you need a fundamentally different assessment for a distinct role, skill set, or hiring need (e.g., Frontend vs Backend, or different experience levels requiring different question sets). Variants require at least two variants and routing logic to be visible to candidates; you cannot delete a variant if only two exist.","Document 1 states variants allow a single assessment to adapt to different candidate profiles based on roles, skills, or other criteria, eliminating separate tests and improving efficiency. Document 2 notes variants reduce maintenance overhead while personalizing at scale, and describes routing logic assignment and section reuse. Document 3 and 4 show creating tests for specific roles or custom needs. Document 5 confirms variants reduce maintenance overhead and enable personalization at scale.",product_issue
+replied,screen,"1. Add time accommodation (50%) for the candidate:
+   - Go to the Tests tab, select the test, then open the Candidates tab.
+   - Check the candidate's checkbox.
+   - Click More > Add Time Accommodation.
+   - Enter 50 (percentage in multiples of five) and click Save.
+   The updated duration will appear on the test landing page and in any new invite email.
+
+2. Reinvite the candidate to send a new invitation with the updated duration:
+   - In the same Candidates tab, check the candidate's checkbox.
+   - Click Invite selected.
+   - Click Send invite.
+   - A confirmation appears noting the candidate has already attempted; click Re-invite.
+   - Click Send invite to complete.
+
+The new invitation email will reflect the 50% extended duration (157.5 minutes). The candidate's test landing page will also show the updated time before they start.","Document 2 outlines adding time accommodation after invites (steps 1-8) and notes the updated duration appears in the invite email and landing page. Document 3 provides the reinvitation procedure (steps 1-9). The user's request for 50% extra time matches the accommodation percentage feature, not the fixed-minute 'Add Extra Time' feature.",product_issue
+escalated,settings,"Account deletion for HackerRank Community accounts created via Google login is not covered in the available documentation. The provided articles only address team deletion, SSO login, security settings, and calendar integration for HackerRank for Work. Please contact support directly for account deletion assistance.","Document 1 covers Google Workspace SSO login only. Documents 2 and 3 cover security settings for HackerRank for Work. Document 4 covers Google Calendar integration. Document 5 covers team deletion, not user account deletion. No documentation provides steps for deleting a personal HackerRank Community account.",product_issue
+replied,conversation_management,"I'm sorry, but this request is outside the scope of HackerRank support.",The request was classified by the deterministic policy layer as invalid or outside the supported HackerRank support scope.,invalid
+replied,conversation_management,You're welcome! Happy to help.,The ticket contains only a conversational acknowledgement and does not contain an actionable support request.,invalid

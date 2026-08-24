@@ -29,7 +29,7 @@ class TriageOrchestrator:
             chunks = self.retriever.retrieve(ticket)
         except Exception as exc:
             print(f"RETRIEVAL ERROR: {type(exc).__name__}: {exc}")
-            return self._escalated(policy, "retrieval_failure")
+            return self._escalated(policy, "retrieval_failure", detail=f"{type(exc).__name__}: {exc}")
 
         if len(chunks) < self.min_chunks:
             return self._escalated(policy, "insufficient_evidence")
@@ -38,7 +38,7 @@ class TriageOrchestrator:
             result = self.llm.generate(ticket, policy, chunks)
         except Exception as exc:
             print(f"LLM ERROR: {type(exc).__name__}: {exc}")
-            return self._escalated(policy, "llm_failure")
+            return self._escalated(policy, "llm_failure", detail=f"{type(exc).__name__}: {exc}")
 
         if result.status == "replied" and not (result.response or "").strip():
             return self._escalated(policy, "empty_response")
@@ -64,7 +64,7 @@ class TriageOrchestrator:
         )
 
     @staticmethod
-    def _escalated(policy: PolicyDecision, reason) -> AgentResult:
+    def _escalated(policy: PolicyDecision, reason, detail: str | None = None) -> AgentResult:
         reason_value = reason.value if hasattr(reason, "value") else str(reason)
         descriptions = {
             "empty_ticket": "ticket content is too short or empty",
@@ -82,15 +82,22 @@ class TriageOrchestrator:
         if reason_value in {"empty_ticket", "prompt_injection", "invalid_request"}:
             request_type = RequestType.INVALID
 
+        justification = (
+            f"Ticket automatically escalated per policy: {reason_value}. "
+            f"Policy decision: {policy.request_type.value} "
+            f"(risk: {policy.risk_level.value})."
+        )
+        # Internal-only diagnostic detail (never surfaced in "response"),
+        # so a failure like a truncated/malformed LLM call is diagnosable
+        # from the output CSV itself instead of only from stdout logs.
+        if detail:
+            justification += f" Internal detail: {detail[:300]}"
+
         return AgentResult(
             status="escalated",
             product_area="unknown",
             response=f"Your request has been escalated for human review. Reason: {descriptions.get(reason_value, reason_value.replace('_', ' '))}.",
-            justification=(
-                f"Ticket automatically escalated per policy: {reason_value}. "
-                f"Policy decision: {policy.request_type.value} "
-                f"(risk: {policy.risk_level.value})."
-            ),
+            justification=justification,
             request_type=request_type.value,
         )
 
