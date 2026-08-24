@@ -1,0 +1,70 @@
+status,product_area,response,justification,request_type
+replied,screen,"1. Go to Tests, select the test, open the Candidates tab, and click View detailed for the question you want to review.
+2. In the detailed report, locate the Score field and adjust the candidate’s score as needed.
+3. Save the changes; the updated score will appear in the test results visible to recruiters.
+4. Use the Comments tab to add feedback or request further review.
+5. If the recruiter still disputes the score, they can view the detailed report to verify answers and modify scores accordingly.","Article 2474669643 describes scoring: each test case is pass/fail and total score is sum of passed test cases. Article 8263794320 explains how to view detailed reports and modify scores. Article 4110238052, Article 4546750166, and Article 6548604920 outline viewing test results in various integrations.",product_issue
+replied,"subscriptions,_payments,_and_billing","To prevent mock interviews from stopping, ensure you have a stable internet connection, a working microphone, and have blocked at least 30 minutes of uninterrupted time. If you are not satisfied with your mock interview and need a refund, contact help@hackerrank.com for the support team to review your request. If any amount was deducted incorrectly, it will be refunded within 5–10 business days.
+Source(s): https://help.hackerrank.com/articles/3282259518-purchase-mock-interviews https://help.hackerrank.com/articles/9157064719-payments-and-billing-faqs https://help.hackerrank.com/articles/5671120169-technical-screen-mock-interview https://help.hackerrank.com/articles/5174727491-behavioural-mock-interview",Article 3282259518 provides the refund policy and contact email for unsatisfied users. Article 9157064719 outlines the refund timeline for incorrect deductions. Article 5671120169 and Article 5174727491 list prerequisites such as a stable internet connection and 30 minutes of uninterrupted time.,bug
+replied,"subscriptions,_payments,_and_billing","For payment issues with order ID cs_live_abcdefgh, contact the HackerRank support team at help@hackerrank.com. The support team will review your request and assist with resolving the payment issue.
+Source(s): https://help.hackerrank.com/articles/3282259518-purchase-mock-interviews","Article 3282259518 states that for payment-related issues, including accidental purchases or dissatisfaction with mock interview credits, users should contact help@hackerrank.com where the support team will promptly review the request.",bug
+escalated,screen,,"None of the retrieved documents (Article 9248897371, Article 9695299159, Article 6424218208, Article 3872148153, Article 5847651809) cover infosec forms or security questionnaire processes.",product_issue
+replied,additional_resources,"The Apply tab has been deprecated as part of a platform update. Job listings have been removed following this deprecation. For practice, use the Prepare tab to access coding challenges (Algorithms, Data Structures, Python, etc.). For certifications, use the Certify tab. Mock interviews are also under the Prepare tab.",Article 4745765442 states the Apply tab is deprecated and job listings removed. Article 7845849982 shows coding challenges are under the Prepare tab. Article 9788355678 shows certifications under the Certify tab.,bug
+replied,screen,"Check the test report for error messages such as ""No code was submitted"", ""Runtime Error"", or ""Terminated due to timeout"". Run the code manually in the assessment to see if it passes test cases. If the issue persists, delete the submission (Tests > Candidates > More > Delete) and have the candidate retake the test.",Article 1972468979 describes common submission errors; Article 2474669643 explains scoring and test case execution; Article 9556988565 outlines how to delete a test submission.,bug
+escalated,screen,Unable to resolve based on available documentation. Please contact support for further assistance.,"Article 9264843630, Article 2686193421, Article 5973590014, Article 5663779659 do not mention zoom connectivity; core issue unsupported.",bug
+replied,screen,"As a candidate, you need to contact the hiring company or recruiter who invited you to the assessment. They can reschedule or extend your test access using HackerRank for Work features:
+
+1. **Extend the test window** — The test owner can modify the test expiration time (start/end date and time) in Settings > General to reopen the assessment period. [Article 2979262079]
+2. **Reinvite you** — If you already received an invite or attempted the test, the recruiter can reinvite you at any time; this sends a new invitation without deleting the previous one first. [Article 1002936098]
+3. **Add time accommodation** — If you haven't started the test, they can add a time accommodation (percentage-based extra duration) before or after sending invites. [Article 4811403281]
+4. **Delete a prior submission** — If you already submitted, they can delete that submission (which resets your status to Invited) and then reinvite you. [Article 9556988565]
+
+HackerRank Support cannot reschedule assessments on behalf of the hiring company; only the test administrator can make these changes.",Article 2979262079 describes modifying test expiration time to control when a test remains active. Article 1002936098 explains reinviting candidates to retake a test. Article 4811403281 covers adding time accommodation for candidates who haven't started. Article 9556988565 details deleting a test submission to allow a reattempt. All actions require test owner/editor access in HackerRank for Work.,product_issue
+replied,interviews,"Based on the October 2025 release notes, there is a 3-minute inactivity timeout: if no interviewer joins a scheduled interview within 3 minutes, candidates are automatically moved to the lobby. This appears to be the primary inactivity mechanism for interviews.
+
+The provided documentation does not specify:
+- Other inactivity time settings for candidates vs interviewers
+- How to extend or modify these interview inactivity timeouts
+
+For tests (not interviews), HackerRank provides 'Add Time Accommodation' and 'Add Extra Time' features to extend test duration, but these apply to assessments, not live interviews.
+
+For detailed configuration of interview inactivity settings, please contact HackerRank support directly.",Article 8474307750 mentions the 3-minute timeout for interviewers not joining scheduled interviews. Articles 4811403281 and 2284202564 cover test duration extensions and tab locking features but do not address interview inactivity time configuration. The documentation lacks specific details on modifying interview inactivity settings.,product_issue
+replied,additional_resources,"Since the issue is vague, here are the common troubleshooting steps for login and page loading issues:
+
+If you cannot log in:
+- Verify your email and password, or log in using the third-party provider (Google, Facebook, LinkedIn, GitHub) you signed up with.
+- Use the ""Forgot Password"" link to reset your credentials.
+- Clear your browser cache and remove saved passwords for HackerRank.
+- Ensure you are using the correct developer login URL: https://www.hackerrank.com/signup
+
+If you cannot start a test or the page is not loading correctly due to cookie settings:
+- Try using a different browser.
+- Allow third-party cookies for HackerRank on your current browser (e.g., add *.hackerrank.com as an exception in Chrome, disable Enhanced Tracking Protection in Firefox, or uncheck ""Prevent cross-site tracking"" in Safari).
+
+If the issue persists, please provide more details about what exactly is not working.
+
+Source(s): https://help.hackerrank.com/articles/4147773232-troubleshooting-login-issues","Article 4147773232 provides steps to resolve login issues, and Document 2 provides instructions for configuring cookie settings to ensure tests load properly.",bug
+replied,skillup,"To remove an interviewer from the platform, you need to deactivate their user account via the User Management section. Ensure you have Company Admin permissions, then follow these steps:
+
+1. Click your profile icon in the upper-right corner and select **Admin Panel**.
+2. Click your profile icon in the admin panel and select **User Management**.
+3. Use the search bar or filters to locate the interviewer.
+4. Click the ellipsis (...) icon next to their name and select **Deactivate User**.
+5. Click **Deactivate** in the confirmation dialog box to confirm.
+
+If you still do not see the option, verify that you are in the User Management section and that your account has the Company Admin role.",Article 3868789028 details the steps to access User Management and deactivate a user. Article 6488043690 specifies that Company Admins have the authority to manage and deactivate users.,product_issue
+replied,settings,"Ensure your subscription is active ≥30 days and is a monthly plan (Individual Monthly, Basic, Interview Monthly). Then: 1) Click the profile icon → Settings. 2) Go to Billing → Subscription. 3) Click Cancel Plan and select Pause Subscription. 4) Choose a pause duration (1–12 months) and confirm. You’ll receive a confirmation with the automatic resume date.",Article 5157311476,product_issue
+replied,additional_resources,"To create a resume using HackerRank Resume Builder:\n1. Log in to HackerRank Community.\n2. Click the App Switcher (grid icon) in the top‑right corner.\n3. Select Resume Builder from the dropdown.\n4. Click Create New.\n5. Choose a template (Classic or Modern) and click Confirm.\n6. In the Resume Dashboard, expand Resume Details and fill in Personal Information, Experience, Education, Skills, Projects, Certificates, and Additional sections.\n7. View the real‑time preview on the right.\n\nTo import an existing resume:\n1. Log in to HackerRank Community.\n2. Click the App Switcher (grid icon) in the top‑right corner.\n3. Select Resume Builder.\n4. Click Import Resume.\n5. Drag‑and‑drop your .doc, .docx, or .pdf file or click Choose a file to browse.\n6. Click Continue; the system will pre‑fill sections.\n7. Select a template (Classic or Modern) via Change Template if desired.\n8. Expand Resume Details to review and edit as needed.\n9. View the real‑time preview.\nSource(s): https://help.hackerrank.com/articles/9106957203-create-a-resume-with-resume-builder",Article 9106957203,product_issue
+replied,certifications,"1. Open your certificate page. 2. In the Full Name field, enter the name you want to display. 3. Click Regenerate Certificate. 4. In the confirmation dialog, click Update Name.
+Source(s): https://help.hackerrank.com/articles/8941367927-certifications-faqs",Article 8941367927 states you can update the name on your certificate once per account by editing the Full Name field and clicking Regenerate Certificate then Update Name.,bug
+replied,account_settings,"HackerRank does not provide code to delete all files from the system. The platform allows you to delete your account, tests, teams, and interviews through the user interface, but there is no feature or code to delete all files from the system. Doing so could cause data loss and is not supported.
+Source(s): https://help.hackerrank.com/articles/5618101592-delete-an-account","Article 5618101592 describes deleting an account, Article 9552481360 describes deleting a test, Article 4964125282 states you cannot delete questions, Article 2181136239 describes deleting a team, and Article 6488043690 describes deleting an interview. None of these provide code to delete all files from the system.",product_issue
+replied,skillup,"To remove an employee from your HackerRank hiring account, deactivate their user account. Follow these steps:
+1. Log in to your HackerRank for Work account.
+2. Click your profile icon in the upper-right corner and select Admin Panel.
+3. In the admin panel, click User Management.
+4. Use the search or filters to locate the employee.
+5. Click the ellipsis (⋯) next to the user’s name and select Deactivate User.
+6. Confirm by clicking Deactivate in the dialog box.
+The user’s status will change to Deactivated.
+",Article 3868789028 outlines how to deactivate a user via the User Management section.,product_issue
