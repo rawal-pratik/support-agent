@@ -31,10 +31,14 @@ DEFAULT_BASE_BACKOFF_SECONDS = 2.0
 
 
 class EmbeddingProvider(Protocol):
-    """Protocol for embedding providers."""
+    """Protocol for retrieval embeddings."""
 
-    def embed_texts(self, texts: Sequence[str]) -> list[list[float]]:
-        """Return one embedding per input text."""
+    def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
+        """Return one embedding per corpus document/chunk."""
+        ...
+
+    def embed_query(self, text: str) -> list[float]:
+        """Return one embedding for a retrieval query."""
         ...
 
 
@@ -252,6 +256,7 @@ class GeminiEmbeddingProvider:
     def _embed_batch(
         self,
         batch: Sequence[str],
+        task_type: str,
     ) -> list[list[float]]:
         """Embed one batch with bounded 429 retries."""
 
@@ -263,7 +268,7 @@ class GeminiEmbeddingProvider:
                     model=self._model,
                     contents=list(batch),
                     config=types.EmbedContentConfig(
-                        task_type="RETRIEVAL_DOCUMENT",
+                        task_type=task_type,
                         output_dimensionality=EMBEDDING_DIMENSION,
                     ),
                 )
@@ -304,8 +309,12 @@ class GeminiEmbeddingProvider:
         assert last_error is not None
         raise last_error
 
-    def embed_texts(self, texts: Sequence[str]) -> list[list[float]]:
-        """Embed texts in quota-aware batches."""
+    def _embed_texts(
+        self,
+        texts: Sequence[str],
+        task_type: str,
+    ) -> list[list[float]]:
+        """Embed texts in quota-aware batches for a specific retrieval task."""
 
         if not texts:
             return []
@@ -327,7 +336,34 @@ class GeminiEmbeddingProvider:
 
             self._rate_limiter.wait_for_capacity(token_count)
 
-            batch_embeddings = self._embed_batch(batch)
+            batch_embeddings = self._embed_batch(
+                batch,
+                task_type=task_type,
+            )
             all_embeddings.extend(batch_embeddings)
 
         return all_embeddings
+
+    def embed_documents(
+        self,
+        texts: Sequence[str],
+    ) -> list[list[float]]:
+        """Embed corpus chunks using Gemini's document retrieval task."""
+
+        return self._embed_texts(
+            texts,
+            task_type="RETRIEVAL_DOCUMENT",
+        )
+
+    def embed_query(self, text: str) -> list[float]:
+        """Embed a retrieval query using Gemini's query retrieval task."""
+
+        if not text.strip():
+            return []
+
+        embeddings = self._embed_texts(
+            [text],
+            task_type="RETRIEVAL_QUERY",
+        )
+
+        return embeddings[0] if embeddings else []

@@ -108,7 +108,7 @@ def ingest_corpus(
 
         texts = [chunk.text for chunk in batch]
 
-        embeddings = embedding_provider.embed_texts(texts)
+        embeddings = embedding_provider.embed_documents(texts)
 
         if len(embeddings) != len(batch):
             raise ValueError(
