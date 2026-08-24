@@ -117,7 +117,7 @@ def _split_frontmatter(raw_text: str) -> tuple[str, str]:
 
 
 def chunk_documents(
-    documents: list[Document], chunk_size: int = 400, overlap: int = 50
+    documents: list[Document], chunk_size: int = 600, overlap: int = 75
 ) -> list[DocumentChunk]:
     """Split documents into word-based chunks with deterministic overlap."""
 
