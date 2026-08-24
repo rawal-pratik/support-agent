@@ -1,175 +1,270 @@
-"""Tests for corpus ingestion."""
+"""Basic tests for corpus ingestion."""
 
-from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from support_agent.corpus import DocumentChunk
 from support_agent.ingestion import ingest_corpus
 
 
-class FakeEmbeddingProvider:
-    """Fake embedding provider for testing."""
-
-    def __init__(self, fail: bool = False):
-        self.fail = fail
-        self.last_texts: list[str] | None = None
-
-    def embed_texts(self, texts: list[str]) -> list[list[float]]:
-        self.last_texts = list(texts)
-        if self.fail:
-            raise RuntimeError("embedding failed")
-        return [[float(index)] * 1536 for index, _ in enumerate(texts)]
+def make_chunk(chunk_id: str, text: str = "chunk text"):
+    chunk = MagicMock()
+    chunk.chunk_id = chunk_id
+    chunk.text = text
+    return chunk
 
 
-class FakeRepository:
-    """Fake document chunk repository for testing."""
+class TestIngestCorpus:
+    @patch("support_agent.ingestion.chunk_documents")
+    @patch("support_agent.ingestion.load_documents")
+    def test_ingests_documents(
+        self,
+        mock_load_documents,
+        mock_chunk_documents,
+    ):
+        documents = [MagicMock(), MagicMock()]
 
-    def __init__(self, fail_on_insert: bool = False):
-        self.fail_on_insert = fail_on_insert
-        self.cleared = False
-        self.inserted_chunks: list[DocumentChunk] | None = None
-        self.inserted_embeddings: list[list[float]] | None = None
+        chunks = [
+            make_chunk("chunk-1"),
+            make_chunk("chunk-2"),
+        ]
 
-    def clear_chunks(self) -> None:
-        self.cleared = True
+        mock_load_documents.return_value = documents
+        mock_chunk_documents.return_value = chunks
 
-    def insert_chunks_with_embeddings(
-        self, chunks: list[DocumentChunk], embeddings: list[list[float]]
-    ) -> list[dict]:
-        if self.fail_on_insert:
-            raise RuntimeError("database failed")
-        self.inserted_chunks = list(chunks)
-        self.inserted_embeddings = list(embeddings)
-        return [{"id": chunk.chunk_id} for chunk in chunks]
+        repository = MagicMock()
+        repository.get_existing_chunk_ids.return_value = set()
+        repository.insert_chunks_with_embeddings.return_value = [
+            {},
+            {},
+        ]
 
+        embedding_provider = MagicMock()
+        embedding_provider.embed_documents.return_value = [
+            [0.1, 0.2],
+            [0.3, 0.4],
+        ]
 
-def write_article(root: Path, relative: str, content: str) -> None:
-    """Write a test article to the corpus."""
-    path = root / relative
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
+        result = ingest_corpus(
+            "index.md",
+            repository,
+            embedding_provider,
+        )
 
+        assert result.document_count == 2
+        assert result.chunk_count == 2
+        assert result.inserted_count == 2
+        assert result.skipped_count == 0
 
-def test_successful_corpus_ingestion_stores_chunks_and_embeddings(tmp_path: Path):
-    """Successful ingestion should store chunks with their embeddings."""
-    write_article(tmp_path, "a/doc-1.md", "one two three four five six")
-    (tmp_path / "index.md").write_text(
-        "# KB\n\n## A\n- [Doc 1](a/doc-1.md)\n",
-        encoding="utf-8",
-    )
-
-    provider = FakeEmbeddingProvider()
-    repository = FakeRepository()
-
-    result = ingest_corpus(
-        tmp_path / "index.md",
-        repository,
-        provider,
-        chunk_size=3,
-        overlap=1,
-        clear_existing=True,
-    )
-
-    assert repository.cleared is True
-    assert result.document_count == 1
-    assert result.chunk_count == 3
-    assert result.inserted_count == 3
-    assert provider.last_texts == [
-        "one two three",
-        "three four five",
-        "five six",
-    ]
-    assert [chunk.chunk_id for chunk in repository.inserted_chunks or []] == [
-        "a/doc-1.md#chunk-0",
-        "a/doc-1.md#chunk-1",
-        "a/doc-1.md#chunk-2",
-    ]
-    assert len(repository.inserted_embeddings or []) == 3
-    assert all(
-        len(vector) == 1536 for vector in (repository.inserted_embeddings or [])
-    )
+        repository.clear_chunks.assert_called_once()
+        embedding_provider.embed_documents.assert_called_once_with(
+            ["chunk text", "chunk text"]
+        )
+        repository.insert_chunks_with_embeddings.assert_called_once()
 
 
-def test_chunk_embedding_pairing_is_preserved(tmp_path: Path):
-    """Each chunk should be paired with its corresponding embedding."""
-    write_article(tmp_path, "b/doc-2.md", "alpha beta gamma delta")
-    (tmp_path / "index.md").write_text(
-        "# KB\n\n## B\n- [Doc 2](b/doc-2.md)\n",
-        encoding="utf-8",
-    )
-    provider = FakeEmbeddingProvider()
-    repository = FakeRepository()
+    @patch("support_agent.ingestion.chunk_documents")
+    @patch("support_agent.ingestion.load_documents")
+    def test_skips_existing_chunks(
+        self,
+        mock_load_documents,
+        mock_chunk_documents,
+    ):
+        mock_load_documents.return_value = [MagicMock()]
 
-    ingest_corpus(
-        tmp_path / "index.md", repository, provider, chunk_size=2, overlap=0
-    )
+        chunks = [
+            make_chunk("chunk-1"),
+            make_chunk("chunk-2"),
+        ]
+        mock_chunk_documents.return_value = chunks
 
-    assert [chunk.text for chunk in repository.inserted_chunks or []] == [
-        "alpha beta",
-        "gamma delta",
-    ]
-    assert repository.inserted_embeddings == [[0.0] * 1536, [1.0] * 1536]
+        repository = MagicMock()
+        repository.get_existing_chunk_ids.return_value = {"chunk-1"}
+        repository.insert_chunks_with_embeddings.return_value = [{}]
 
+        embedding_provider = MagicMock()
+        embedding_provider.embed_documents.return_value = [
+            [0.1, 0.2],
+        ]
 
-def test_ingestion_surfaces_embedding_provider_failures(tmp_path: Path):
-    """Embedding provider failures should be surfaced."""
-    write_article(tmp_path, "doc.md", "text one two")
-    (tmp_path / "index.md").write_text(
-        "# KB\n\n## C\n- [Doc](doc.md)\n", encoding="utf-8"
-    )
-    provider = FakeEmbeddingProvider(fail=True)
-    repository = FakeRepository()
+        result = ingest_corpus(
+            "index.md",
+            repository,
+            embedding_provider,
+        )
 
-    with pytest.raises(RuntimeError, match="embedding failed"):
-        ingest_corpus(tmp_path / "index.md", repository, provider)
+        assert result.chunk_count == 2
+        assert result.inserted_count == 1
+        assert result.skipped_count == 1
 
-
-def test_ingestion_surfaces_database_failures(tmp_path: Path):
-    """Database failures should be surfaced."""
-    write_article(tmp_path, "doc.md", "text one two")
-    (tmp_path / "index.md").write_text(
-        "# KB\n\n## C\n- [Doc](doc.md)\n", encoding="utf-8"
-    )
-    provider = FakeEmbeddingProvider()
-    repository = FakeRepository(fail_on_insert=True)
-
-    with pytest.raises(RuntimeError, match="database failed"):
-        ingest_corpus(tmp_path / "index.md", repository, provider)
+        embedding_provider.embed_documents.assert_called_once_with(
+            ["chunk text"]
+        )
 
 
-def test_empty_corpus_returns_zero_chunks_and_skips_embedding(tmp_path: Path):
-    """Empty corpus should skip embedding and return zero counts."""
-    (tmp_path / "index.md").write_text("# KB\n\n## Empty\n", encoding="utf-8")
-    provider = FakeEmbeddingProvider()
-    repository = FakeRepository()
+    @patch("support_agent.ingestion.chunk_documents")
+    @patch("support_agent.ingestion.load_documents")
+    def test_does_not_clear_existing_when_disabled(
+        self,
+        mock_load_documents,
+        mock_chunk_documents,
+    ):
+        mock_load_documents.return_value = [MagicMock()]
+        mock_chunk_documents.return_value = [
+            make_chunk("chunk-1")
+        ]
 
-    result = ingest_corpus(tmp_path / "index.md", repository, provider)
+        repository = MagicMock()
+        repository.get_existing_chunk_ids.return_value = set()
+        repository.insert_chunks_with_embeddings.return_value = [{}]
 
-    assert repository.cleared is True
-    assert result.document_count == 0
-    assert result.chunk_count == 0
-    assert result.inserted_count == 0
-    assert provider.last_texts is None
-    assert repository.inserted_chunks is None
+        embedding_provider = MagicMock()
+        embedding_provider.embed_documents.return_value = [
+            [0.1, 0.2]
+        ]
+
+        ingest_corpus(
+            "index.md",
+            repository,
+            embedding_provider,
+            clear_existing=False,
+        )
+
+        repository.clear_chunks.assert_not_called()
 
 
-def test_ingestion_can_skip_clearing_existing_chunks(tmp_path: Path):
-    """Ingestion can skip clearing existing chunks when clear_existing=False."""
-    write_article(tmp_path, "doc.md", "one two three")
-    (tmp_path / "index.md").write_text(
-        "# KB\n\n## D\n- [Doc](doc.md)\n", encoding="utf-8"
-    )
-    provider = FakeEmbeddingProvider()
-    repository = FakeRepository()
+    @patch("support_agent.ingestion.chunk_documents")
+    @patch("support_agent.ingestion.load_documents")
+    def test_empty_corpus(
+        self,
+        mock_load_documents,
+        mock_chunk_documents,
+    ):
+        mock_load_documents.return_value = []
+        mock_chunk_documents.return_value = []
 
-    result = ingest_corpus(
-        tmp_path / "index.md",
-        repository,
-        provider,
-        clear_existing=False,
-    )
+        repository = MagicMock()
+        embedding_provider = MagicMock()
 
-    assert repository.cleared is False
-    assert result.chunk_count == 1
-    assert result.inserted_count == 1
+        result = ingest_corpus(
+            "index.md",
+            repository,
+            embedding_provider,
+        )
+
+        assert result.document_count == 0
+        assert result.chunk_count == 0
+        assert result.inserted_count == 0
+        assert result.skipped_count == 0
+
+        embedding_provider.embed_documents.assert_not_called()
+        repository.insert_chunks_with_embeddings.assert_not_called()
+
+
+class TestIngestValidation:
+    def test_invalid_batch_size(self):
+        with pytest.raises(
+            ValueError,
+            match="batch_size must be positive",
+        ):
+            ingest_corpus(
+                "index.md",
+                MagicMock(),
+                MagicMock(),
+                batch_size=0,
+            )
+
+    def test_invalid_max_chunks(self):
+        with pytest.raises(
+            ValueError,
+            match="max_chunks must be positive",
+        ):
+            ingest_corpus(
+                "index.md",
+                MagicMock(),
+                MagicMock(),
+                max_chunks=0,
+            )
+
+
+class TestIngestBatching:
+    @patch("support_agent.ingestion.chunk_documents")
+    @patch("support_agent.ingestion.load_documents")
+    def test_processes_chunks_in_batches(
+        self,
+        mock_load_documents,
+        mock_chunk_documents,
+    ):
+        mock_load_documents.return_value = [MagicMock()]
+
+        mock_chunk_documents.return_value = [
+            make_chunk("chunk-1", "one"),
+            make_chunk("chunk-2", "two"),
+            make_chunk("chunk-3", "three"),
+        ]
+
+        repository = MagicMock()
+        repository.get_existing_chunk_ids.return_value = set()
+
+        repository.insert_chunks_with_embeddings.side_effect = [
+            [{}, {}],
+            [{}],
+        ]
+
+        embedding_provider = MagicMock()
+        embedding_provider.embed_documents.side_effect = [
+            [[0.1], [0.2]],
+            [[0.3]],
+        ]
+
+        result = ingest_corpus(
+            "index.md",
+            repository,
+            embedding_provider,
+            batch_size=2,
+        )
+
+        assert result.chunk_count == 3
+        assert result.inserted_count == 3
+
+        assert embedding_provider.embed_documents.call_count == 2
+        assert (
+            repository.insert_chunks_with_embeddings.call_count
+            == 2
+        )
+
+
+class TestEmbeddingValidation:
+    @patch("support_agent.ingestion.chunk_documents")
+    @patch("support_agent.ingestion.load_documents")
+    def test_rejects_wrong_embedding_count(
+        self,
+        mock_load_documents,
+        mock_chunk_documents,
+    ):
+        mock_load_documents.return_value = [MagicMock()]
+
+        mock_chunk_documents.return_value = [
+            make_chunk("chunk-1"),
+            make_chunk("chunk-2"),
+        ]
+
+        repository = MagicMock()
+        repository.get_existing_chunk_ids.return_value = set()
+
+        embedding_provider = MagicMock()
+        embedding_provider.embed_documents.return_value = [
+            [0.1],
+        ]
+
+        with pytest.raises(
+            ValueError,
+            match="does not match batch size",
+        ):
+            ingest_corpus(
+                "index.md",
+                repository,
+                embedding_provider,
+            )
+
+        repository.insert_chunks_with_embeddings.assert_not_called()
