@@ -61,12 +61,10 @@ class SemanticRetriever:
         # Combine subject and issue for embedding
         ticket_text = f"{ticket.subject} {ticket.issue}".strip()
 
-        # Embed the ticket text
-        embeddings = self._embedding_provider.embed_texts([ticket_text])
-        if not embeddings:
+        # Embed the ticket as a retrieval query.
+        query_embedding = self._embedding_provider.embed_query(ticket_text)
+        if not query_embedding:
             return []
-
-        query_embedding = embeddings[0]
 
         # Search for similar chunks
         results = self._repository.similarity_search(
