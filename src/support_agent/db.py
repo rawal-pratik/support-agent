@@ -1,7 +1,3 @@
-"""Supabase repository for document chunks and vector search."""
-
-from __future__ import annotations
-
 import os
 from collections.abc import Sequence
 from typing import Any
@@ -45,6 +41,7 @@ class DocumentChunkRepository:
                 "source_path": chunk.source_path,
                 "title": chunk.title,
                 "category": chunk.category,
+                "url": chunk.url,
                 "chunk_text": chunk.text,
             }
             for chunk in chunks
@@ -67,12 +64,10 @@ class DocumentChunkRepository:
         chunks: Sequence[DocumentChunk],
         embeddings: Sequence[Sequence[float]],
     ) -> list[dict[str, Any]]:
-        """Insert chunks with their embeddings and return stored rows."""
+        """Insert chunks with embeddings and return stored rows."""
 
         if len(embeddings) != len(chunks):
-            raise ValueError(
-                "embeddings length must match chunks length"
-            )
+            raise ValueError("embeddings length must match chunks length")
 
         rows: list[dict[str, Any]] = []
 
@@ -83,6 +78,7 @@ class DocumentChunkRepository:
                     "source_path": chunk.source_path,
                     "title": chunk.title,
                     "category": chunk.category,
+                    "url": chunk.url,
                     "chunk_text": chunk.text,
                     "embedding": list(embeddings[index]),
                 }
@@ -91,21 +87,58 @@ class DocumentChunkRepository:
         if not rows:
             return []
 
-        # Upsert makes this operation safe if the same chunk is encountered
-        # again during a resumed ingestion.
         response = (
             self._client
             .table(TABLE_NAME)
-            .upsert(rows, on_conflict="id")
+            .insert(rows)
             .execute()
         )
 
         return response.data
 
+    def get_existing_chunk_ids(
+        self,
+        chunk_ids: Sequence[str],
+        batch_size: int = 100,
+    ) -> set[str]:
+        """Return chunk IDs that already exist in the database."""
+
+        if not chunk_ids:
+            return set()
+
+        if batch_size <= 0:
+            raise ValueError("batch_size must be positive")
+
+        existing: set[str] = set()
+
+        for start in range(0, len(chunk_ids), batch_size):
+            batch = list(chunk_ids[start : start + batch_size])
+
+            response = (
+                self._client
+                .table(TABLE_NAME)
+                .select("id")
+                .in_("id", batch)
+                .execute()
+            )
+
+            existing.update(
+                row["id"]
+                for row in response.data
+            )
+
+        return existing
+
     def clear_chunks(self) -> None:
         """Remove all stored chunks for a development rebuild."""
 
-        self._client.table(TABLE_NAME).delete().neq("id", "").execute()
+        (
+            self._client
+            .table(TABLE_NAME)
+            .delete()
+            .neq("id", "")
+            .execute()
+        )
 
     def similarity_search(
         self,
@@ -126,31 +159,3 @@ class DocumentChunkRepository:
         ).execute()
 
         return response.data
-
-    def get_existing_chunk_ids(
-        self,
-        chunk_ids: Sequence[str],
-        batch_size: int = 100,
-    ) -> set[str]:
-        """Return IDs already stored in Supabase using batched queries."""
-
-        if batch_size <= 0:
-            raise ValueError("batch_size must be positive")
-
-        existing_ids: set[str] = set()
-
-        ids = list(chunk_ids)
-
-        for start in range(0, len(ids), batch_size):
-            batch = ids[start : start + batch_size]
-
-            response = (
-                self._client
-                .table(TABLE_NAME)
-                .select("id")
-                .in_("id", batch)
-                .execute()
-            )
-
-            existing_ids.update(row["id"] for row in response.data)
-        return existing_ids

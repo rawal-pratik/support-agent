@@ -38,11 +38,29 @@ def _services(top_k=5, candidate_k=30, threshold=0.0, max_chunks_per_source=2):
 
 @app.command()
 def ingest(
-    index_path: Path = typer.Option("public/corpus/index.md", "--index-path", "-i", exists=True),
-    chunk_size: int = typer.Option(600, "--chunk-size", min=1),
-    overlap: int = typer.Option(75, "--overlap", min=0),
-    max_chunks: Optional[int] = typer.Option(None, "--max-chunks"),
-    clear: bool = typer.Option(True, "--clear/--no-clear"),
+    index_path: Path = typer.Option(
+        "public/corpus/index.md",
+        "--index-path",
+        "-i",
+        exists=True,
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+    ),
+    chunk_size: int = typer.Option(
+        400,
+        "--chunk-size",
+        min=1,
+    ),
+    overlap: int = typer.Option(
+        50,
+        "--overlap",
+        min=0,
+    ),
+    clear: bool = typer.Option(
+        True,
+        "--clear/--no-clear",
+    ),
 ):
     try:
         result = ingest_corpus(
@@ -52,16 +70,16 @@ def ingest(
             chunk_size=chunk_size,
             overlap=overlap,
             clear_existing=clear,
-            max_chunks=max_chunks,
         )
+
         typer.echo(f"Documents processed: {result.document_count}")
         typer.echo(f"Chunks created: {result.chunk_count}")
         typer.echo(f"Chunks inserted: {result.inserted_count}")
         typer.echo(f"Chunks skipped: {result.skipped_count}")
+
     except Exception as exc:
         typer.echo(f"Ingestion failed: {exc}", err=True)
         raise typer.Exit(1)
-
 
 @app.command()
 def search(
