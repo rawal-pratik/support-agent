@@ -1,0 +1,32 @@
+status,product_area,response,justification,request_type
+replied,screen,"Tests stay active between the start and end dates/times you set in the Test Expiration Time section. If you leave those fields empty, the test remains active indefinitely.",Article 2979262079,product_issue
+escalated,unknown,Your request has been escalated for human review. Reason: high-risk content detected.,Ticket automatically escalated per policy: high_risk. Policy decision: bug (risk: high).,bug
+replied,screen,"Use test variants when you need to assess candidates for different roles, skills, or tech stacks (e.g., front-end developers for React, Angular, Vue.js) within a single assessment. This personalizes evaluation, eliminates managing separate tests, and improves efficiency.
+
+Create a separate test when you need fundamentally different assessments that don't share a common structure or purpose.
+
+Advantages of variants: Single assessment management, personalized candidate experience, shared sections across variants, reduced maintenance overhead, and clean role-specific reporting.
+
+To create variants: Go to Tests > open a test > Questions tab > click ⋮ > Create Variants. You need at least two variants. Add routing logic to assign candidates to specific variants based on their input.
+
+Source(s): (no URL available for this document)","Article 7530103378 describes test variants as a way to create a single assessment that adapts to different candidate profiles, eliminating the need to manage separate tests and improving efficiency. Article 3121307537 confirms test variants allow creating multiple variations of a test and delivering the correct one based on candidate input, reducing maintenance overhead while providing flexibility to personalize assessments at scale.",product_issue
+replied,screen,"To give the candidate 50% extra time on the 105-minute assessment, use the **Add Time Accommodation** feature on the existing invite — no reinvitation is needed as long as the candidate has not started the test.
+
+Steps:
+1. Log in to HackerRank for Work.
+2. Go to the **Tests** tab and select the test.
+3. Open the **Candidates** tab.
+4. Check the box next to the candidate.
+5. Click **More > Add Time Accommodation**.
+6. Enter **50%** (or choose Custom and type 50).
+7. Click **Save**.
+
+The system updates the invite template; the candidate’s invitation email and the test landing page will now show the extended duration (157.5 minutes).
+
+If the candidate has already started the test, use **More > Add Time** to add extra minutes instead (this requires a page refresh for the candidate). Reinviting (via **Invite selected > Re-invite**) is only necessary if the candidate needs a completely new attempt — it deletes the previous report.
+
+Source(s): https://support.hackerrank.com/articles/4811403281-adding-extra-time-for-candidates https://support.hackerrank.com/articles/1002936098-reinviting-candidates-to-a-test","Article 4811403281 describes Add Time Accommodation (percentage-based, applied before candidate starts) and Add Extra Time (minutes-based, during/after test). Article 1002936098 describes reinviting candidates, which deletes the previous report and is for retakes, not for adding time to an existing invite.",product_issue
+replied,account_settings,"To delete your account created with Google login, you must first set a password. Follow the resetting password steps in the Resetting password documentation (see the link in the delete account article). Then log in to HackerRank Community, go to Settings > Delete Accounts, click Delete Account, choose a reason, enter your password, and confirm. If you cannot access your Google account, contact HackerRank support at help@hackerrank.com for assistance.
+Source(s): https://help.hackerrank.com/articles/1917106962-manage-account-faqs https://help.hackerrank.com/articles/5618101592-delete-an-account",Article 1917106962 states that Google sign‑up accounts need a password before deletion and to contact support if the third‑party account is inaccessible. Article 5618101592 explains the deletion steps and notes that a password must be set first via the resetting password documentation.,product_issue
+replied,conversation_management,"I'm sorry, but this request is outside the scope of HackerRank support.",The request was classified by the deterministic policy layer as invalid or outside the supported HackerRank support scope.,invalid
+replied,conversation_management,You're welcome! Happy to help.,The ticket contains only a conversational acknowledgement and does not contain an actionable support request.,invalid

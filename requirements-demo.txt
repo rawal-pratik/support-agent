@@ -1,0 +1,7 @@
+streamlit
+python-dotenv
+pydantic
+httpx
+supabase
+google-genai
+typer
